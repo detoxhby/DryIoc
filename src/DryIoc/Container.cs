@@ -3490,7 +3490,7 @@ namespace DryIoc
         public static IResolverContext OpenScope(this IResolverContext r, object name = null, bool trackInParent = false)
         {
             // todo: Should we use OwnCurrentScope, then should it be in ResolverContext?
-            var scope = r.ScopeContext == null ? new Scope(r.CurrentScope, name) : SetCurrentContextScope(r, name);
+            var scope = r.ScopeContext == null ? Scope.Create(r.CurrentScope, name) : SetCurrentContextScope(r, name);
 
             if (trackInParent)
                 (scope.Parent ?? r.SingletonScope).TrackDisposable(scope);
@@ -3504,7 +3504,7 @@ namespace DryIoc
         internal static bool TryGetUsedInstance(this IResolverContext r, Type serviceType, out object instance)
         {
             instance = null;
-            return  r.CurrentScope?.TryGetUsedInstance(r, serviceType, out instance) == true ||
+            return r.CurrentScope?.TryGetUsedInstance(r, serviceType, out instance) == true || 
                    r.SingletonScope.TryGetUsedInstance(r, serviceType, out instance);
         }
 
@@ -9590,11 +9590,32 @@ namespace DryIoc
     /// <c>lock</c> is used internally to ensure that object factory called only once.</summary>
     public sealed class Scope : IScope
     {
+        private static readonly StackPool<Scope> _scopePool = new StackPool<Scope>();
+
+        /// Rents from pool or creates the scope
+        public static Scope Create(IScope parent = null, object name = null)
+        {
+            var scope = _scopePool.Rent();
+            if (scope != null)
+            {
+                scope.Parent = parent;
+                scope.Name = name;
+                scope._disposed = 0;
+                scope._nextDisposalIndex = int.MaxValue;
+            }
+            else
+            {
+                scope = new Scope(parent, name);
+            }
+
+            return scope;
+        }
+
         /// <summary>Parent scope in scope stack. Null for the root scope.</summary>
-        public IScope Parent { get; }
+        public IScope Parent { get; private set; }
 
         /// <summary>Optional name associated with scope.</summary>
-        public object Name { get; }
+        public object Name { get; private set; }
 
         /// <summary>True if scope is disposed.</summary>
         public bool IsDisposed => _disposed == 1;
@@ -9870,6 +9891,9 @@ namespace DryIoc
 
             _disposables = ImMap<IDisposable>.Empty;
             _items = ImMap<object>.Empty;
+            _factories = ImHashMap<Type, FactoryDelegate>.Empty;
+
+            _scopePool.Return(this);
         }
 
         /// <summary>Prints scope info (name and parent) to string for debug purposes.</summary>
