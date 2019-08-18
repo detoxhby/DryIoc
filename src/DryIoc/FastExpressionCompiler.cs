@@ -2165,13 +2165,19 @@ namespace FastExpressionCompiler.LightExpression
                     return true;
                 }
 
+                // todo: split the method for expr == null
+                //if (expr == null)
+                //{
+                //    ;
+                //}
+
                 var constantType = constantValue.GetType();
                 if (expr != null && IsClosureBoundConstant(constantValue, constantType.GetTypeInfo()))
                 {
-                    var closureConstants = closure.Constants;
-
+                    ref var closureConstants = ref closure.Constants;
                     var constIndex = closureConstants.Count - 1;
-                    while (constIndex >= 0 && !ReferenceEquals(closureConstants.Items[constIndex], expr))
+                    var constItems = closureConstants.Items;
+                    while (constIndex != -1 && !ReferenceEquals(constItems[constIndex], expr))
                         --constIndex;
                     if (constIndex == -1)
                         return false;
@@ -2181,7 +2187,15 @@ namespace FastExpressionCompiler.LightExpression
                     il.Emit(OpCodes.Ldfld, ArrayClosure.ConstantsAndNestedLambdasField);
                     EmitLoadConstantInt(il, constIndex);
                     il.Emit(OpCodes.Ldelem_Ref);
-                    il.Emit(exprType.IsValueType() ? OpCodes.Unbox_Any : OpCodes.Castclass, exprType);
+
+                    // todo: find why? commenting the line does not throw
+                    //if (exprType.IsValueType())
+                    //    il.Emit(OpCodes.Unbox_Any, exprType);
+                    //if (exprType != typeof(object))
+                    //{
+                    //    ;
+                    //}
+                    //il.Emit(exprType.IsValueType() ? OpCodes.Unbox_Any : OpCodes.Castclass, exprType);
                 }
                 else
                 {
@@ -2272,14 +2286,18 @@ namespace FastExpressionCompiler.LightExpression
                     else return false;
                 }
 
+                // todo: check first for the ValueType
                 var underlyingNullableType = Nullable.GetUnderlyingType(exprType);
                 if (underlyingNullableType != null)
+                {
                     il.Emit(OpCodes.Newobj, exprType.GetTypeInfo().DeclaredConstructors.GetFirst());
-
-                // todo: consider how to remove boxing where it is not required
-                // boxing the value type, otherwise we can get a strange result when 0 is treated as Null.
+                }
                 else if (exprType == typeof(object) && constantType.IsValueType())
+                {
+                    // todo: consider how to remove boxing where it is not required
+                    // boxing the value type, otherwise we can get a strange result when 0 is treated as Null.
                     il.Emit(OpCodes.Box, constantValue.GetType()); // using normal type for Enum instead of underlying type
+                }
 
                 return true;
             }
