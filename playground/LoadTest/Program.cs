@@ -27,7 +27,7 @@ namespace LoadTest
              */
             var container = new Container(rules => rules 
                 // depth:5 - completes in 00:02:22.07, for singletonDecorators: false - 00:02:15.27; depth 8 - is still a stack overflow
-                .WithDependencyDepthToSplitObjectGraph(5)
+                //.WithDependencyDepthToSplitObjectGraph(5)
                 .With(FactoryMethod.ConstructorWithResolvableArguments))
                 .WithWebApi(config);
 

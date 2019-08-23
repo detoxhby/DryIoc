@@ -8132,7 +8132,9 @@ namespace DryIoc
                 request.Reuse is SingletonReuse && !setup.PreventDisposal && !setup.WeaklyReferenced)
             {
                 if (container.SingletonScope.TryGet(out var singleton, FactoryID))
-                    return Constant(singleton, request.ServiceType);
+                    return singleton is ConstantExpression constExpr
+                        ? constExpr
+                        : Constant(singleton, request.ServiceType);
             }
 
             if ((request.Flags & RequestFlags.IsGeneratedResolutionDependencyExpression) == 0 &&
@@ -8204,27 +8206,31 @@ namespace DryIoc
                 !request.TracksTransientDisposable &&
                 !request.IsWrappedInFunc())
             {
-                var createSingleton = 
-                    Setup.WeaklyReferenced ? (Func<IResolverContext, Expression, bool, object>)(
-                        (r, e, u) => new WeakReference(
+                Func<IResolverContext, Expression, bool, ConstantExpression> createSingleton;
+                if (Setup.WeaklyReferenced)
+                    createSingleton = (r, e, u) => Constant(new WeakReference(
                         Interpreter.TryInterpretAndUnwrapContainerException(r, e, u, out var instance)
-                            ? instance : e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation)(r))) :
-                    Setup.PreventDisposal ? (Func<IResolverContext, Expression, bool, object>)(
-                        (r, e, u) => (object)new HiddenDisposable(
+                            ? instance 
+                            : e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation)(r)));
+                else if (Setup.PreventDisposal)
+                    createSingleton = (r, e, u) => Constant(new HiddenDisposable(
                         Interpreter.TryInterpretAndUnwrapContainerException(r, e, u, out var instance)
-                            ? instance : e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation)(r))) :
-                        (r, e, u) =>
-                        {
-                            if (Interpreter.TryInterpretAndUnwrapContainerException(r, e, u, out var instance))
-                                return instance;
-                            return e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation)(r);
-                        };
+                            ? instance 
+                            : e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation)(r)));
+                else
+                    createSingleton = (r, e, u) =>
+                    {
+                        if (Interpreter.TryInterpretAndUnwrapContainerException(r, e, u, out var instance))
+                            return Constant(instance, e.Type);
+                        return Constant(
+                            e.CompileToFactoryDelegate(u, ((IContainer)r).Rules.UseInterpretation).Invoke(r),
+                            e.Type);
+                    };
 
                 var container = request.Container;
-                var singleton = container.SingletonScope.TryGetOrAddWithoutClosure(FactoryID, 
-                    container, serviceExpr, container.Rules.UseFastExpressionCompiler, createSingleton, Setup.DisposalOrder);
-
-                serviceExpr = Constant(singleton);
+                serviceExpr = container.SingletonScope.TryGetOrAddConstExprWithoutClosure(
+                    FactoryID, container, serviceExpr, container.Rules.UseFastExpressionCompiler, 
+                    createSingleton, Setup.DisposalOrder);
             }
             else
             {
@@ -9573,6 +9579,12 @@ namespace DryIoc
             IResolverContext resolveContext, Expression expr, bool useFec,
             Func<IResolverContext, Expression, bool, object> createValue, int disposalOrder = 0);
 
+        /// Wraps the the value into constant expression
+        ConstantExpression TryGetOrAddConstExprWithoutClosure(int id,
+            IResolverContext resolveContext, Expression expr, bool useFec,
+            Func<IResolverContext, Expression, bool, ConstantExpression> createConstExpr, 
+            int disposalOrder = 0);
+
         /// <summary>Tracked item will be disposed with the scope. 
         /// Smaller <paramref name="disposalOrder"/> will be disposed first.</summary>
         object TrackDisposable(object item, int disposalOrder = 0);
@@ -9637,10 +9649,7 @@ namespace DryIoc
         {
             var slotsCopy = new ImMap<ItemRef>[MAP_COUNT];
             for (var i = 0; i < MAP_COUNT; i++)
-            {
-                // todo: we need a way to copy all Refs in the slot - do we?
                 slotsCopy[i] = _maps[i];
-            }
 
             return new Scope(Parent, Name, slotsCopy, _factories, _disposables, _nextDisposalIndex);
         }
@@ -9689,7 +9698,10 @@ namespace DryIoc
         public object GetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
             ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
-            return map.GetValueOrDefault(id)?.Item ?? TryGetOrAddViaFactoryDelegate(ref map, id, createValue, r, disposalOrder);
+            var item = map.GetValueOrDefault(id)?.Item;
+            if (item != null)
+                return item is ConstantExpression constExpr ? constExpr.Value : item;
+            return TryGetOrAddViaFactoryDelegate(ref map, id, createValue, r, disposalOrder);
         }
 
         internal static readonly MethodInfo GetOrAddViaFactoryDelegateMethod =
@@ -9757,10 +9769,48 @@ namespace DryIoc
                 itemRef.Item = createValue(resolveContext, expr, useFec);
             }
 
-            if (itemRef.Item is IDisposable disposable && disposable != this)
+            var newItem = itemRef.Item;
+            if (newItem is IDisposable disposable && disposable != this)
                 AddDisposable(disposable, disposalOrder);
 
-            return itemRef.Item;
+            return newItem;
+        }
+
+        /// Wraps the the value into constant expression
+        public ConstantExpression TryGetOrAddConstExprWithoutClosure(int id,
+            IResolverContext resolveContext, Expression expr, bool useFec,
+            Func<IResolverContext, Expression, bool, ConstantExpression> createConstExpr, int disposalOrder = 0)
+        {
+            if (_disposed == 1)
+                Throw.It(Error.ScopeIsDisposed, ToString());
+
+            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+
+            var itemRef = new ItemRef();
+            var m = map;
+            if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(id, itemRef, (oldRef, _) => oldRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+
+            itemRef = map.GetValueOrDefault(id);
+            if (itemRef.Item != null)
+                return (ConstantExpression)itemRef.Item;
+
+            // lock on the ref itself to set its `Item` field
+            ConstantExpression constExpr;
+            lock (itemRef)
+            {
+                // double-check if the item was changed in between (double check locking)
+                if (itemRef.Item != null)
+                    return (ConstantExpression)itemRef.Item;
+
+                // we can simply it assign because we are under the lock 
+                itemRef.Item = constExpr = createConstExpr(resolveContext, expr, useFec);
+            }
+
+            if (constExpr.Value is IDisposable disposable && disposable != this)
+                AddDisposable(disposable, disposalOrder);
+
+            return constExpr;
         }
 
         ///[Obsolete("Removing because it is used only by obsolete `UseInstance` feature")]

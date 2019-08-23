@@ -139,13 +139,14 @@ namespace DryIoc.UnitTests
         public void Given_registered_service_Resolving_service_dependency_Func_with_parameter_and_as_is_should_provide_same_instances()
         {
             var container = new Container();
+
             container.Register(typeof(ClientWithFuncAndInstanceDependency));
             container.RegisterInstance("I am a string");
             container.Register(typeof(IService), typeof(ServiceWithOnePrimitiveParameter), Reuse.Singleton);
 
             var client = container.Resolve<ClientWithFuncAndInstanceDependency>();
 
-            Assert.That(client.Factory("blah"), Is.SameAs(client.Instance));
+            Assert.AreSame(client.Instance, client.Factory("blah"));
         }
 
         [Test]
