@@ -2141,7 +2141,7 @@ namespace ImTools
             key &= KEY_MASK;
 
             var newSlot = copy.KeyPlusHeight == 0
-                ? ImMapSlot<V>.Leaf(key, value)
+                ? new ImMapSlot<V>(key | 1, value)
                 : key == copy.KeyPart
                     ? new ImMapSlot<V>(copy.KeyPlusHeight, value, copy.Left, copy.Right)
 
@@ -2154,7 +2154,7 @@ namespace ImTools
 
         private static void RefAddOrUpdateSlot<V>(ref ImMapSlot<V> slot, int key, V value) =>
             Ref.Swap(ref slot, key, value, (k, v, s) =>
-                s.KeyPlusHeight == 0 ? ImMapSlot<V>.Leaf(k, v)
+                s.KeyPlusHeight == 0 ? new ImMapSlot<V>(k | 1, v)
                 : k != s.KeyPart ? s.AddOrUpdate(k, v)
                 : new ImMapSlot<V>(s.KeyPlusHeight, v, s.Left, s.Right));
 
@@ -2196,6 +2196,15 @@ namespace ImTools
         public static bool TryFind<V>(this ImMapSlot<V>[] slots, int key, out V value) =>
             slots[key & SLOT_MASK].TryFind(key & KEY_MASK, out value);
 
+        /// Adds the empty thingy with the default constructor and returns the created empty or the item already in the slot
+        [MethodImpl((MethodImplOptions)256)]
+        public static ImMapSlot<V> GetOrAddNew<V>(this ImMapSlot<V> slot, int key, out V value) where V : class, new()
+        {
+            value = slot.GetValueOrDefault(key);
+            return value != null ? slot
+                : slot.KeyPlusHeight == 0 ? new ImMapSlot<V>(key | 1, value = new V())
+                : slot.AddOnly(key, value = new V());
+        }
     }
 
     /// Slot used in `ImMapArray` where Height and Key is combined into one field
@@ -2240,6 +2249,14 @@ namespace ImTools
         /// Outputs the key value pair or empty if node is empty
         public override string ToString() => IsEmpty ? "empty" : "Node: " + KeyPart + " -> " + Value;
 
+        internal ImMapSlot(int keyPlusHeight, V value)
+        {
+            KeyPlusHeight = keyPlusHeight;
+            Value = value;
+            Left = Empty;
+            Right = Empty;
+        }
+
         internal ImMapSlot(int keyPlusHeight, V value, ImMapSlot<V> left, ImMapSlot<V> right)
         {
             KeyPlusHeight = keyPlusHeight;
@@ -2247,10 +2264,6 @@ namespace ImTools
             Left = left;
             Right = right;
         }
-
-        [MethodImpl((MethodImplOptions)256)]
-        internal static ImMapSlot<V> Leaf(int key, V value) =>
-            new ImMapSlot<V>(key | 1, value, Empty, Empty);
 
         [MethodImpl((MethodImplOptions)256)]
         internal static ImMapSlot<V> Branch(int key, V value, ImMapSlot<V> left, ImMapSlot<V> right) =>
@@ -2261,10 +2274,10 @@ namespace ImTools
             if (key < KeyPart)
             {
                 if (Left.KeyPlusHeight == 0)
-                    return new ImMapSlot<V>(KeyPart | 2, Value, Leaf(key, value), Right);
+                    return new ImMapSlot<V>(KeyPart | 2, Value, new ImMapSlot<V>(key | 1, value), Right);
 
                 if (Left.KeyPart == key)
-                    return new ImMapSlot<V>(KeyPart | Height, Value, Leaf(key, value), Right);
+                    return new ImMapSlot<V>(KeyPart | Height, Value, new ImMapSlot<V>(key | 1, value), Right);
 
                 if (Right.KeyPlusHeight == 0)
                 {
@@ -2273,13 +2286,13 @@ namespace ImTools
                     //   2            1     5
                     // 1              
                     if (key < Left.KeyPart)
-                        return new ImMapSlot<V>(Left.KeyPart | 2, Left.Value, Leaf(key, value), Leaf(KeyPart, Value));
+                        return new ImMapSlot<V>(Left.KeyPart | 2, Left.Value, new ImMapSlot<V>(key | 1, value), new ImMapSlot<V>(KeyPart | 1, Value));
 
                     // double rotation:
                     //      5     =>     5     =>     4
                     //   2            4            2     5
                     //     4        2               
-                    return new ImMapSlot<V>(key | 2, value, Leaf(Left.KeyPart, Left.Value), Leaf(KeyPart, Value));
+                    return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(Left.KeyPart | 1, Left.Value), new ImMapSlot<V>(KeyPart | 1, Value));
                 }
 
                 var left = Left.AddOrUpdate(key, value);
@@ -2311,10 +2324,10 @@ namespace ImTools
             else
             {
                 if (Right.KeyPlusHeight == 0)
-                    return Branch(KeyPart | 2, Value, Left, Leaf(key, value));
+                    return Branch(KeyPart | 2, Value, Left, new ImMapSlot<V>(key | 1, value));
 
                 if (Right.KeyPart == key)
-                    return Branch(KeyPart | Height, Value, Left, Leaf(key, value));
+                    return Branch(KeyPart | Height, Value, Left, new ImMapSlot<V>(key | 1, value));
 
                 if (Left.KeyPlusHeight == 0)
                 {
@@ -2323,13 +2336,13 @@ namespace ImTools
                     //         8      5     9
                     //           9
                     if (key >= Right.KeyPart)
-                        return new ImMapSlot<V>(Right.KeyPart | 2, Right.Value, Leaf(KeyPart, Value), Leaf(key, value));
+                        return new ImMapSlot<V>(Right.KeyPart | 2, Right.Value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(key | 1, value));
 
                     // double rotation:
                     //      5     =>     5     =>     7
                     //         8            7      5     8
                     //        7              8
-                    return new ImMapSlot<V>(key | 2, value, Leaf(KeyPart, Value), Leaf(Right.KeyPart, Right.Value));
+                    return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(Right.KeyPart | 1, Right.Value));
                 }
 
                 var right = Right.AddOrUpdate(key, value);
@@ -2355,14 +2368,14 @@ namespace ImTools
             if (key < KeyPart)
             {
                 if (Left.KeyPlusHeight == 0)
-                    return new ImMapSlot<V>(KeyPart | 2, Value, Leaf(key, value), Right);
+                    return new ImMapSlot<V>(KeyPart | 2, Value, new ImMapSlot<V>(key | 1, value), Right);
 
                 if (Right.KeyPlusHeight == 0)
                 {
                     if (key < Left.KeyPart)
-                        return new ImMapSlot<V>(Left.KeyPart | 2, Left.Value, Leaf(key, value), Leaf(KeyPart, Value));
+                        return new ImMapSlot<V>(Left.KeyPart | 2, Left.Value, new ImMapSlot<V>(key | 1, value), new ImMapSlot<V>(KeyPart | 1, Value));
 
-                    return new ImMapSlot<V>(key | 2, value, Leaf(Left.KeyPart, Left.Value), Leaf(KeyPart, Value));
+                    return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(Left.KeyPart | 1, Left.Value), new ImMapSlot<V>(KeyPart | 1, Value));
                 }
 
                 var left = Left.AddOrUpdate(key, value);
@@ -2385,14 +2398,14 @@ namespace ImTools
             else
             {
                 if (Right.KeyPlusHeight == 0)
-                    return Branch(KeyPart | 2, Value, Left, Leaf(key, value));
+                    return Branch(KeyPart | 2, Value, Left, new ImMapSlot<V>(key | 1, value));
 
                 if (Left.KeyPlusHeight == 0)
                 {
                     if (key >= Right.KeyPart)
-                        return new ImMapSlot<V>(Right.KeyPart | 2, Right.Value, Leaf(KeyPart, Value), Leaf(key, value));
+                        return new ImMapSlot<V>(Right.KeyPart | 2, Right.Value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(key | 1, value));
 
-                    return new ImMapSlot<V>(key | 2, value, Leaf(KeyPart, Value), Leaf(Right.KeyPart, Right.Value));
+                    return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(Right.KeyPart | 1, Right.Value));
                 }
 
                 var right = Right.AddOrUpdate(key, value);
@@ -2430,7 +2443,7 @@ namespace ImTools
 
             value = newValue;
             return KeyPlusHeight == 0 
-                ? new ImMapSlot<V>(key | 1, value, Empty, Empty) 
+                ? new ImMapSlot<V>(key | 1, value) 
                 : AddOnly(key, value);
         }
 
@@ -2465,7 +2478,7 @@ namespace ImTools
         // note: Not so much optimized (memory and performance wise) as a AddOrUpdateImpl without `update` delegate
         internal ImMapSlot<V> AddOrUpdate(int key, V value, bool updateOnly, Update<V> update) =>
             KeyPlusHeight == 0
-                ? (updateOnly ? this : Leaf(key, value))
+                ? (updateOnly ? this : new ImMapSlot<V>(key | 1, value))
                 : key == KeyPart
                     ? new ImMapSlot<V>(KeyPlusHeight, update == null ? value : update(Value, value), Left, Right)
                     : key < KeyPart // try update on left or right sub-tree
