@@ -2869,7 +2869,7 @@ namespace DryIoc
 
             var id = (int)ConstValue(args[2]);
 
-            ref var map = ref scope._maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref scope._maps[id & ImMapArray.SLOT_MASK];
             id &= ImMapArray.KEY_MASK;
 
             var itemRef = map.GetValueOrDefault(id);
@@ -8413,7 +8413,7 @@ namespace DryIoc
                     Throw.It(Error.ScopeIsDisposed, scope.ToString());
 
                 var factoryId = FactoryID;
-                ref var map = ref scope._maps.Slots[factoryId & ImMapArray.SLOT_MASK];
+                ref var map = ref scope._maps[factoryId & ImMapArray.SLOT_MASK];
                 var id = factoryId & ImMapArray.KEY_MASK;
 
                 var itemRef = new ItemRef();
@@ -9818,10 +9818,10 @@ namespace DryIoc
 
         /// <summary>Creates scope with optional parent and name.</summary>
         public Scope(IScope parent = null, object name = null)
-            : this(parent, name, ImMapArray<ItemRef>.CreateEmpty(), ImHashMap<Type, FactoryDelegate>.Empty, ImMap<IDisposable>.Empty, int.MaxValue)
+            : this(parent, name, ImMapArray.CreateEmptySlots<ItemRef>(), ImHashMap<Type, FactoryDelegate>.Empty, ImMap<IDisposable>.Empty, int.MaxValue)
         { }
 
-        private Scope(IScope parent, object name, ImMapArray<ItemRef> maps,
+        private Scope(IScope parent, object name, ImMapSlot<ItemRef>[] maps,
             ImHashMap<Type, FactoryDelegate> instances, ImMap<IDisposable> disposables, int nextDisposalIndex)
         {
             Parent = parent;
@@ -9832,7 +9832,7 @@ namespace DryIoc
             _maps = maps;
         }
 
-        private static ImMapArray<ItemRef> _emptySlots = ImMapArray<ItemRef>.CreateEmpty();
+        private static ImMapSlot<ItemRef>[] _emptySlots = ImMapArray.CreateEmptySlots<ItemRef>();
 
         /// <inheritdoc />
         public IScope Clone() => 
@@ -9842,7 +9842,7 @@ namespace DryIoc
         [MethodImpl((MethodImplOptions)256)]
         public object GetOrAdd(int id, CreateScopedValue createValue, int disposalOrder = 0)
         {
-            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref _maps[id & ImMapArray.SLOT_MASK];
             var itemRef = map.GetValueOrDefault(id);
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
@@ -9883,7 +9883,7 @@ namespace DryIoc
         [MethodImpl((MethodImplOptions)256)]
         public object GetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
-            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref _maps[id & ImMapArray.SLOT_MASK];
             var itemRef = map.GetValueOrDefault(id);
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
@@ -9933,7 +9933,7 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref _maps[id & ImMapArray.SLOT_MASK];
             id &= ImMapArray.KEY_MASK;
 
             var itemRef = new ItemRef();
@@ -9963,7 +9963,7 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref _maps[id & ImMapArray.SLOT_MASK];
             id &= ImMapArray.KEY_MASK;
 
             var itemRef = new ItemRef();
@@ -9995,7 +9995,7 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            ref var map = ref _maps[id & ImMapArray.SLOT_MASK];
             id &= ImMapArray.KEY_MASK;
 
             var itemRef = new ItemRef();
@@ -10136,7 +10136,7 @@ namespace DryIoc
         private ImMap<IDisposable> _disposables;
         private int _nextDisposalIndex;
         private int _disposed;
-        internal ImMapArray<ItemRef> _maps;
+        internal ImMapSlot<ItemRef>[] _maps;
     }
 
     // Stores the item object in a ref (class) box which does not change after created and may be used for locking
