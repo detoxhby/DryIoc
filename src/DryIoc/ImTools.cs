@@ -2103,34 +2103,46 @@ namespace ImTools
     /// The array of ImMap of constant width wide, where the `Key` is partitioned using last bits and the rest of bits are combined with `Height` into a single `int32`
     public struct ImMapArray<V>
     {
-        // Slots count and mask to partition the Key across the slots 
-        internal const int SLOT_COUNT = 32;
-        internal const int HEIGHT_MASK = SLOT_COUNT - 1;
-        internal const int KEY_MASK = ~HEIGHT_MASK;
-
         /// Creates en empty array
         [MethodImpl((MethodImplOptions)256)]
-        public static ImMapArray<V> Create()
+        public static ImMapArray<V> CreateEmpty()
         {
-            var slots = new ImMapSlot<V>[SLOT_COUNT];
-            for (var i = 0; i < SLOT_COUNT; ++i)
+            var slots = new ImMapSlot<V>[ImMapArray.SLOT_COUNT];
+            for (var i = 0; i < slots.Length; ++i)
                 slots[i] = ImMapSlot<V>.Empty;
             return new ImMapArray<V>(slots);
         }
 
-        internal readonly ImMapSlot<V>[] Slots;
+        /// Copies the slots into a new map array
+        [MethodImpl((MethodImplOptions)256)]
+        public ImMapArray<V> WithSlotsCopy()
+        {
+            var slotsCopy = new ImMapSlot<V>[ImMapArray.SLOT_COUNT];
+            for (var i = 0; i < slotsCopy.Length; i++) 
+                slotsCopy[i] = Slots[i];
+            return new ImMapArray<V>(slotsCopy);
+        }
+
+        /// Array of immutable trees
+        public readonly ImMapSlot<V>[] Slots;
+
         private ImMapArray(ImMapSlot<V>[] slots) => Slots = slots;
 
         /// Returns a new tree with added or updated value for specified key.
         [MethodImpl((MethodImplOptions)256)]
         public void AddOrUpdate(int key, V value)
         {
-            ref var slot = ref Slots[key & HEIGHT_MASK];
+            ref var slot = ref Slots[key & ImMapArray.SLOT_MASK];
             var copy = slot;
+            key &= ImMapArray.KEY_MASK;
 
-            var newSlot = copy.KeyPlusHeight == 0 ? ImMapSlot<V>.Leaf(key & KEY_MASK, value)
-                : (key & KEY_MASK) != copy.KeyPart ? copy.AddOrUpdate(key & KEY_MASK, value)
-                : new ImMapSlot<V>(copy.KeyPlusHeight, value, copy.Left, copy.Right);
+            ImMapSlot<V> newSlot;
+            if (copy.KeyPlusHeight == 0)
+                newSlot = ImMapSlot<V>.Leaf(key, value);
+            else if (key == copy.KeyPart)
+                newSlot = new ImMapSlot<V>(copy.KeyPlusHeight, value, copy.Left, copy.Right);
+            else
+                newSlot = copy.AddOrUpdate(key, value);
 
             if (Interlocked.CompareExchange(ref slot, newSlot, copy) != copy)
                 RefAddOrUpdateSlot(ref slot, key, value);
@@ -2149,12 +2161,12 @@ namespace ImTools
         [MethodImpl((MethodImplOptions)256)]
         public void AddOrUpdate(int key, V value, Update<V> updateValue)
         {
-            ref var slot = ref Slots[key & HEIGHT_MASK];
+            ref var slot = ref Slots[key & ImMapArray.SLOT_MASK];
             var copy = slot;
 
-            var newSlot = copy.AddOrUpdate(key & KEY_MASK, value, false, updateValue);
+            var newSlot = copy.AddOrUpdate(key & ImMapArray.KEY_MASK, value, false, updateValue);
             if (Interlocked.CompareExchange(ref slot, newSlot, copy) != copy)
-                RefAddOrUpdateSlot(ref slot, key & KEY_MASK, value, updateValue);
+                RefAddOrUpdateSlot(ref slot, key & ImMapArray.KEY_MASK, value, updateValue);
         }
 
         private static void RefAddOrUpdateSlot(ref ImMapSlot<V> slot, int key, V value, Update<V> updateValue) =>
@@ -2166,11 +2178,11 @@ namespace ImTools
         [MethodImpl((MethodImplOptions)256)]
         public void Update(int key, V value)
         {
-            ref var slot = ref Slots[key & HEIGHT_MASK];
+            ref var slot = ref Slots[key & ImMapArray.SLOT_MASK];
             var copy = slot;
-            var newSlot = copy.AddOrUpdate(key & KEY_MASK, value, true, null);
+            var newSlot = copy.AddOrUpdate(key & ImMapArray.KEY_MASK, value, true, null);
             if (Interlocked.CompareExchange(ref slot, newSlot, copy) != copy)
-                RefUpdateSlot(ref slot, key & KEY_MASK, value);
+                RefUpdateSlot(ref slot, key & ImMapArray.KEY_MASK, value);
         }
 
         private static void RefUpdateSlot(ref ImMapSlot<V> slot, int key, V value) =>
@@ -2178,36 +2190,26 @@ namespace ImTools
 
         /// Get value for found key or the default value otherwise.
         [MethodImpl((MethodImplOptions)256)]
-        public V GetValueOrDefault(int key)
-        {
-            var slot = Slots[key & HEIGHT_MASK];
-
-            key &= KEY_MASK;
-            while (slot.KeyPlusHeight != 0 && key != slot.KeyPart)
-                slot = key < slot.KeyPart ? slot.Left : slot.Right;
-
-            return slot.Value;
-        }
+        public V GetValueOrDefault(int key) => 
+            Slots[key & ImMapArray.SLOT_MASK].GetValueOrDefault(key & ImMapArray.KEY_MASK);
 
         /// Returns true if key is found and sets the value.
         [MethodImpl((MethodImplOptions)256)]
-        public bool TryFind(int key, out V value)
-        {
-            var slot = Slots[key & HEIGHT_MASK];
+        public bool TryFind(int key, out V value) => 
+            Slots[key & ImMapArray.SLOT_MASK].TryFind(key & ImMapArray.KEY_MASK, out value);
+    }
 
-            key &= KEY_MASK;
-            while (slot.KeyPlusHeight != 0 && key != slot.KeyPart)
-                slot = key < slot.KeyPart ? slot.Left : slot.Right;
+    /// Tools
+    public static class ImMapArray
+    {
+        /// Slots count and mask to partition the Key across the slots 
+        public const int SLOT_COUNT = 16;
 
-            if (slot.KeyPlusHeight == 0)
-            {
-                value = default;
-                return false;
-            }
+        /// Slot mask and actually a Height mask 
+        public const int SLOT_MASK = SLOT_COUNT - 1;
 
-            value = slot.Value;
-            return true;
-        }
+        /// The Key mask together with lower bits <see cref="SLOT_MASK"/> composes the full `int32`
+        public const int KEY_MASK = ~SLOT_MASK;
     }
 
     /// Slot used in `ImMapArray` where Height and Key is combined into one field
@@ -2232,14 +2234,14 @@ namespace ImTools
         public int KeyPart
         {
             [MethodImpl((MethodImplOptions)256)]
-            get => KeyPlusHeight & ImMapArray<V>.KEY_MASK;
+            get => KeyPlusHeight & ImMapArray.KEY_MASK;
         }
 
         /// Height of longest sub-tree/branch plus 1. It is 0 for empty tree, and 1 for single node tree.
         public int Height
         {
             [MethodImpl((MethodImplOptions)256)]
-            get => KeyPlusHeight & ImMapArray<V>.HEIGHT_MASK;
+            get => KeyPlusHeight & ImMapArray.SLOT_MASK;
         }
 
         /// <summary>Returns true is tree is empty.</summary>
@@ -2369,6 +2371,7 @@ namespace ImTools
             while (slot.KeyPlusHeight != 0 && key != slot.KeyPart)
                 slot = key < slot.KeyPart ? slot.Left : slot.Right;
 
+            // found the slot
             if (slot.KeyPlusHeight != 0)
             {
                 value = slot.Value;
@@ -2376,7 +2379,39 @@ namespace ImTools
             }
 
             value = newValue;
+
+            // if slot is empty, create a new slot, otherwise add to tree
+            if (KeyPlusHeight == 0)
+                return new ImMapSlot<V>(key | 1, value, Empty, Empty);
             return AddOrUpdate(key, value);
+        }
+
+        /// Finds the value by key or returns the default value for the type
+        [MethodImpl((MethodImplOptions)256)]
+        public V GetValueOrDefault(int key)
+        {
+            var slot = this;
+            while (slot.KeyPlusHeight != 0 && key != slot.KeyPart)
+                slot = key < slot.KeyPart ? slot.Left : slot.Right;
+            return slot.Value;
+        }
+
+        /// Tries to find the value by key
+        [MethodImpl((MethodImplOptions)256)]
+        public bool TryFind(int key, out V value)
+        {
+            var slot = this;
+            while (slot.KeyPlusHeight != 0 && key != slot.KeyPart)
+                slot = key < slot.KeyPart ? slot.Left : slot.Right;
+
+            if (slot.KeyPlusHeight == 0)
+            {
+                value = default;
+                return false;
+            }
+
+            value = slot.Value;
+            return true;
         }
 
         // note: Not so much optimized (memory and performance wise) as a AddOrUpdateImpl without `update` delegate

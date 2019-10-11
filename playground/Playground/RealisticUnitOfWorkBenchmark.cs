@@ -14,7 +14,7 @@ namespace PerformanceTests
 {
     public class RealisticUnitOfWorkBenchmark
     {
-        public static IContainer PrepareDryIoc(bool useInterpretation = false, bool withoutFastExpressionCompiler = false)
+        public static IContainer PrepareDryIocWithOpts(bool useInterpretation = false, bool withoutFastExpressionCompiler = false)
         {
             var container = !useInterpretation && !withoutFastExpressionCompiler ? new Container() 
                 : useInterpretation ? new Container(rules => rules.WithUseInterpretation())
@@ -108,7 +108,7 @@ namespace PerformanceTests
             return container;
         }
 
-        public static IContainer PrepareDryIoc_RegisterDelegateWithInjectedDependencies()
+        public static IContainer PrepareDryIoc()
         {
             var container = new Container();
 
@@ -969,25 +969,21 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
 
             ### FEC v3.0 and multiple improvements: fan-out cache, and scope storage, per container expression cache, etc.
 
-|                                               Method |     Mean |     Error |    StdDev | Ratio | RatioSD |   Gen 0 |  Gen 1 | Gen 2 | Allocated |
-|----------------------------------------------------- |---------:|----------:|----------:|------:|--------:|--------:|-------:|------:|----------:|
-|                    BmarkMicrosoftDependencyInjection | 143.5 us | 3.2190 us | 6.0460 us |  1.00 |    0.00 | 18.5547 | 0.2441 |     - |  80.63 KB |
-|                                          BmarkDryIoc | 121.3 us | 0.5245 us | 0.4906 us |  0.83 |    0.05 | 21.1182 | 0.2441 |     - |   97.5 KB |
-| BmarkDryIoc_RegisterDelegateWithInjectedDependencies | 110.6 us | 0.8813 us | 0.7812 us |  0.75 |    0.04 | 18.6768 | 0.4883 |     - |  86.44 KB |
-|                                      BmarkDryIocMsDi | 133.9 us | 1.5022 us | 1.4052 us |  0.91 |    0.06 | 23.1934 |      - |     - | 107.88 KB |
+|                            Method |     Mean |     Error |    StdDev | Ratio |   Gen 0 |  Gen 1 | Gen 2 | Allocated |
+|---------------------------------- |---------:|----------:|----------:|------:|--------:|-------:|------:|----------:|
+| BmarkMicrosoftDependencyInjection | 140.2 us | 1.3188 us | 1.2336 us |  1.00 | 18.5547 | 0.2441 |     - |  80.63 KB |
+|                       BmarkDryIoc | 105.7 us | 0.3330 us | 0.2952 us |  0.75 | 19.0430 | 0.3662 |     - |  87.88 KB |
+|                   BmarkDryIocMsDi | 141.2 us | 1.5663 us | 1.3079 us |  1.01 | 23.4375 |      - |     - |  109.1 KB |
              */
 
             [Benchmark(Baseline = true)]
             public object BmarkMicrosoftDependencyInjection() => Measure(PrepareMsDi());
 
+            //[Benchmark]
+            //public object BmarkDryIoc_WithoutFastExpressionCompiler() => Measure(PrepareDryIocWithOpts(false, withoutFastExpressionCompiler: true));
+
             [Benchmark]
             public object BmarkDryIoc() => Measure(PrepareDryIoc());
-
-            //[Benchmark]
-            public object BmarkDryIoc_WithoutFastExpressionCompiler() => Measure(PrepareDryIoc(false, withoutFastExpressionCompiler: true));
-
-            [Benchmark]
-            public object BmarkDryIoc_RegisterDelegateWithInjectedDependencies() => Measure(PrepareDryIoc_RegisterDelegateWithInjectedDependencies());
 
             [Benchmark]
             public object BmarkDryIocMsDi() => Measure(PrepareDryIocMsDi());
@@ -1178,18 +1174,17 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
 
             ## FEC V3 and multiple improvements
 
-|                                               Method |     Mean |     Error |    StdDev | Ratio | RatioSD |  Gen 0 | Gen 1 | Gen 2 | Allocated |
-|----------------------------------------------------- |---------:|----------:|----------:|------:|--------:|-------:|------:|------:|----------:|
-|                    BmarkMicrosoftDependencyInjection | 3.973 us | 0.0872 us | 0.1456 us |  1.00 |    0.00 | 0.9460 |     - |     - |   4.37 KB |
-|                                          BmarkDryIoc | 3.291 us | 0.0210 us | 0.0197 us |  0.81 |    0.04 | 1.1559 |     - |     - |   5.33 KB |
-| BmarkDryIoc_RegisterDelegateWithInjectedDependencies | 2.854 us | 0.0118 us | 0.0111 us |  0.70 |    0.03 | 1.1559 |     - |     - |   5.33 KB |
-|                                      BmarkDryIocMsDi | 3.487 us | 0.0049 us | 0.0041 us |  0.86 |    0.04 | 1.1597 |     - |     - |   5.35 KB |
+|                            Method |     Mean |     Error |    StdDev | Ratio |  Gen 0 | Gen 1 | Gen 2 | Allocated |
+|---------------------------------- |---------:|----------:|----------:|------:|-------:|------:|------:|----------:|
+| BmarkMicrosoftDependencyInjection | 3.774 us | 0.0222 us | 0.0208 us |  1.00 | 0.9460 |     - |     - |   4.37 KB |
+|                       BmarkDryIoc | 2.812 us | 0.0068 us | 0.0057 us |  0.75 | 1.2970 |     - |     - |   5.99 KB |
+|                   BmarkDryIocMsDi | 3.538 us | 0.0306 us | 0.0239 us |  0.94 | 1.3046 |     - |     - |   6.02 KB |
 
 /
             */
 
             private IServiceProvider _msDi;
-            private IContainer _dryIoc, _dryIoc_UseInterpretation, _dryIoc_WoutFec, _dryIoc_RegDelInjectedDeps;
+            private IContainer _dryIoc;//, _dryIoc_UseInterpretation, _dryIoc_WoutFec;
             private IServiceProvider _dryIocMsDi;
             private DependencyInjectionContainer _grace;
             private IServiceProvider _graceMsDi;
@@ -1201,9 +1196,8 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
             {
                 Measure(_msDi = PrepareMsDi());
                 Measure(_dryIoc = PrepareDryIoc());
-                Measure(_dryIoc_UseInterpretation = PrepareDryIoc(true));
-                Measure(_dryIoc_WoutFec = PrepareDryIoc(false, true));
-                Measure(_dryIoc_RegDelInjectedDeps = PrepareDryIoc_RegisterDelegateWithInjectedDependencies());
+                //Measure(_dryIoc_UseInterpretation = PrepareDryIocWithOpts(true));
+                //Measure(_dryIoc_WoutFec = PrepareDryIocWithOpts(false, true));
                 Measure(_dryIocMsDi = PrepareDryIocMsDi());
                 Measure(_grace = PrepareGrace());
                 Measure(_graceMsDi = PrepareGraceMsDi());
@@ -1217,14 +1211,11 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
             [Benchmark]
             public object BmarkDryIoc() => Measure(_dryIoc);
 
-            [Benchmark]
-            public object BmarkDryIoc_RegisterDelegateWithInjectedDependencies() => Measure(_dryIoc_RegDelInjectedDeps);
+            //[Benchmark]
+            //public object BmarkDryIoc_UseInterpretation() => Measure(_dryIoc_UseInterpretation);
 
             //[Benchmark]
-            public object BmarkDryIoc_UseInterpretation() => Measure(_dryIoc_UseInterpretation);
-
-            //[Benchmark]
-            public object BmarkDryIoc_WithoutFastExpressionCompiler() => Measure(_dryIoc_WoutFec);
+            //public object BmarkDryIoc_WithoutFastExpressionCompiler() => Measure(_dryIoc_WoutFec);
 
             [Benchmark]
             public object BmarkDryIocMsDi() => Measure(_dryIocMsDi);

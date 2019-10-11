@@ -2869,8 +2869,9 @@ namespace DryIoc
 
             var id = (int)ConstValue(args[2]);
 
-            var mapIndex = id & Scope.MAP_COUNT_SUFFIX_MASK;
-            ref var map = ref scope._maps[mapIndex];
+            ref var map = ref scope._maps.Slots[id & ImMapArray.SLOT_MASK];
+            id &= ImMapArray.KEY_MASK;
+
             var itemRef = map.GetValueOrDefault(id);
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
@@ -2879,15 +2880,15 @@ namespace DryIoc
 
             var lambda = args[3];
             if (lambda is ConstantExpression factoryDelegate)
-                return scope.TryGetOrAddViaFactoryDelegate(ref map, id, (FactoryDelegate)factoryDelegate.Value, r, disposalOrder);
+                return scope.TryGetOrAddViaFactoryDelegate(ref map, id, 
+                    (FactoryDelegate)factoryDelegate.Value, r, disposalOrder);
 
             // add only, keep old item if it already exists
             itemRef = new ItemRef();
-            var currMap = map;
-            if (Interlocked.CompareExchange(ref map, map.AddOrUpdate(id, itemRef, (oldRef, _) => oldRef), currMap) != currMap)
-                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+            var m = map;
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            itemRef = map.GetValueOrDefault(id);
             if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
 
@@ -8412,14 +8413,14 @@ namespace DryIoc
                     Throw.It(Error.ScopeIsDisposed, scope.ToString());
 
                 var factoryId = FactoryID;
-                ref var map = ref scope._maps[factoryId & Scope.MAP_COUNT_SUFFIX_MASK];
+                ref var map = ref scope._maps.Slots[factoryId & ImMapArray.SLOT_MASK];
+                var id = factoryId & ImMapArray.KEY_MASK;
 
                 var itemRef = new ItemRef();
                 var m = map;
-                if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(factoryId, itemRef, (oldRef, _) => oldRef), m) != m)
-                    Ref.Swap(ref map, factoryId, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+                if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                    Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-                itemRef = map.GetValueOrDefault(factoryId);
                 if (ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 {
                     var isNewItem = false;
@@ -9817,10 +9818,10 @@ namespace DryIoc
 
         /// <summary>Creates scope with optional parent and name.</summary>
         public Scope(IScope parent = null, object name = null)
-            : this(parent, name, CreateEmptyMaps(), ImHashMap<Type, FactoryDelegate>.Empty, ImMap<IDisposable>.Empty, int.MaxValue)
+            : this(parent, name, ImMapArray<ItemRef>.CreateEmpty(), ImHashMap<Type, FactoryDelegate>.Empty, ImMap<IDisposable>.Empty, int.MaxValue)
         { }
 
-        private Scope(IScope parent, object name, ImMap<ItemRef>[] maps,
+        private Scope(IScope parent, object name, ImMapArray<ItemRef> maps,
             ImHashMap<Type, FactoryDelegate> instances, ImMap<IDisposable> disposables, int nextDisposalIndex)
         {
             Parent = parent;
@@ -9831,52 +9832,33 @@ namespace DryIoc
             _maps = maps;
         }
 
-        private static ImMap<ItemRef>[] _emptySlots = CreateEmptyMaps();
-
-        private static ImMap<ItemRef>[] CreateEmptyMaps()
-        {
-            var slots = new ImMap<ItemRef>[MAP_COUNT];
-            for (int i = 0; i < MAP_COUNT; i++)
-                slots[i] = ImMap<ItemRef>.Empty;
-            return slots;
-        }
+        private static ImMapArray<ItemRef> _emptySlots = ImMapArray<ItemRef>.CreateEmpty();
 
         /// <inheritdoc />
-        public IScope Clone()
-        {
-            var slotsCopy = new ImMap<ItemRef>[MAP_COUNT];
-            for (var i = 0; i < MAP_COUNT; i++)
-            {
-                // todo: we need a way to copy all Refs in the slot - do we?
-                slotsCopy[i] = _maps[i];
-            }
-
-            return new Scope(Parent, Name, slotsCopy, _factories, _disposables, _nextDisposalIndex);
-        }
+        public IScope Clone() => 
+            new Scope(Parent, Name, _maps.WithSlotsCopy(), _factories, _disposables, _nextDisposalIndex);
 
         /// <inheritdoc />
         [MethodImpl((MethodImplOptions)256)]
         public object GetOrAdd(int id, CreateScopedValue createValue, int disposalOrder = 0)
         {
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
             var itemRef = map.GetValueOrDefault(id);
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
-
-            return TryGetOrAdd(ref map, id, createValue, disposalOrder);
+            return TryGetOrAdd(ref map, id & ImMapArray.KEY_MASK, createValue, disposalOrder);
         }
 
-        private object TryGetOrAdd(ref ImMap<ItemRef> map, int id, CreateScopedValue createValue, int disposalOrder = 0)
+        private object TryGetOrAdd(ref ImMapSlot<ItemRef> map, int id, CreateScopedValue createValue, int disposalOrder = 0)
         {
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
             var itemRef = new ItemRef();
             var m = map;
-            if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(id, itemRef, (oldRef, _) => oldRef), m) != m)
-                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            itemRef = map.GetValueOrDefault(id);
             if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
 
@@ -9901,29 +9883,28 @@ namespace DryIoc
         [MethodImpl((MethodImplOptions)256)]
         public object GetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
             var itemRef = map.GetValueOrDefault(id);
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
-
-            return TryGetOrAddViaFactoryDelegate(ref map, id, createValue, r, disposalOrder);
+            return TryGetOrAddViaFactoryDelegate(ref map, id & ImMapArray.KEY_MASK, createValue, r, disposalOrder);
         }
 
         internal static readonly MethodInfo GetOrAddViaFactoryDelegateMethod =
             typeof(IScope).GetTypeInfo().GetDeclaredMethod(nameof(IScope.GetOrAddViaFactoryDelegate));
 
-        internal object TryGetOrAddViaFactoryDelegate(ref ImMap<ItemRef> map, 
+        internal object TryGetOrAddViaFactoryDelegate(ref ImMapSlot<ItemRef> map, 
             int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
             var itemRef = new ItemRef();
+            
             var m = map;
-            if (Interlocked.CompareExchange(ref map, map.AddOrUpdate(id, itemRef, (oldRef, _) => oldRef), m) != m)
-                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            itemRef = map.GetValueOrDefault(id);
             if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
 
@@ -9944,7 +9925,7 @@ namespace DryIoc
             return itemRef.Item;
         }
 
-        /// <inheritdoc />
+        /// Used from the Interpreter
         public object TryGetOrAddWithoutClosure(int id,
             IResolverContext resolveContext, Expression expr, bool useFec,
             Func<IResolverContext, Expression, bool, object> createValue, int disposalOrder = 0)
@@ -9952,14 +9933,14 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            id &= ImMapArray.KEY_MASK;
 
             var itemRef = new ItemRef();
             var m = map;
-            if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(id, itemRef, (oldRef, _) => oldRef), m) != m)
-                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.AddOrUpdate(i, ir, (oldRef, _) => oldRef));
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            itemRef = map.GetValueOrDefault(id);
             if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return itemRef.Item;
 
@@ -9982,15 +9963,14 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            id &= ImMapArray.KEY_MASK;
 
-            // todo: add the AddOrUpdate version returning the existing Value if it exists the sme way as for `ImHashMap`,
-            // so we don't need to `TryFind` later
+            var itemRef = new ItemRef();
             var m = map;
-            if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(id, new ItemRef(), (oldRef, _) => oldRef), m) != m)
-                Ref.Swap(ref map, x => x.AddOrUpdate(id, new ItemRef(), (oldRef, _) => oldRef));
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            var itemRef = map.GetValueOrDefault(id);
             if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
                 return;
 
@@ -10015,18 +9995,16 @@ namespace DryIoc
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
 
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            ref var map = ref _maps.Slots[id & ImMapArray.SLOT_MASK];
+            id &= ImMapArray.KEY_MASK;
 
-            if (map.TryFind(id, out var itemRef) && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
-                return itemRef.Item;
-
-            // todo: add the AddOrUpdate version returning the existing Value if it exists the sme way as for `ImHashMap`,
-            // so we don't need to `TryFind` later
+            var itemRef = new ItemRef();
             var m = map;
-            if (Interlocked.CompareExchange(ref map, m.AddOrUpdate(id, new ItemRef(), (oldRef, _) => oldRef), m) != m)
-                Ref.Swap(ref map, x => x.AddOrUpdate(id, new ItemRef(), (oldRef, _) => oldRef));
+            if (Interlocked.CompareExchange(ref map, m.GetOrAdd(id, itemRef, out itemRef), m) != m)
+                Ref.Swap(ref map, id, itemRef, (i, ir, x) => x.GetOrAdd(i, ir, out itemRef));
 
-            itemRef = map.GetValueOrDefault(id);
+            if (!ReferenceEquals(itemRef.Item, ItemRef.NoItem))
+                return itemRef.Item;
 
             // lock on the ref itself to set its `Item` field
             lock (itemRef)
@@ -10058,7 +10036,7 @@ namespace DryIoc
         [MethodImpl((MethodImplOptions)256)]
         public bool TryGet(out object item, int id)
         {
-            var itemRef = _maps[id & MAP_COUNT_SUFFIX_MASK].GetValueOrDefault(id); 
+            var itemRef = _maps.GetValueOrDefault(id); 
             if (itemRef != null && !ReferenceEquals(itemRef.Item, ItemRef.NoItem))
             {
                 item = itemRef.Item;
@@ -10158,11 +10136,7 @@ namespace DryIoc
         private ImMap<IDisposable> _disposables;
         private int _nextDisposalIndex;
         private int _disposed;
-
-
-        internal const int MAP_COUNT = 16;
-        internal const int MAP_COUNT_SUFFIX_MASK = MAP_COUNT - 1;
-        internal ImMap<ItemRef>[] _maps;
+        internal ImMapArray<ItemRef> _maps;
     }
 
     // Stores the item object in a ref (class) box which does not change after created and may be used for locking
