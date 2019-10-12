@@ -1176,15 +1176,17 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
 
 |                            Method |     Mean |     Error |    StdDev | Ratio |  Gen 0 | Gen 1 | Gen 2 | Allocated |
 |---------------------------------- |---------:|----------:|----------:|------:|-------:|------:|------:|----------:|
-| BmarkMicrosoftDependencyInjection | 3.774 us | 0.0222 us | 0.0208 us |  1.00 | 0.9460 |     - |     - |   4.37 KB |
-|                       BmarkDryIoc | 2.812 us | 0.0068 us | 0.0057 us |  0.75 | 1.2970 |     - |     - |   5.99 KB |
-|                   BmarkDryIocMsDi | 3.538 us | 0.0306 us | 0.0239 us |  0.94 | 1.3046 |     - |     - |   6.02 KB |
+| BmarkMicrosoftDependencyInjection | 3.878 us | 0.0290 us | 0.0272 us |  1.00 | 0.9460 |     - |     - |   4.37 KB |
+|                       BmarkDryIoc | 2.648 us | 0.0073 us | 0.0065 us |  0.68 | 1.1559 |     - |     - |   5.33 KB |
+|                   BmarkDryIocMsDi | 3.305 us | 0.0206 us | 0.0172 us |  0.85 | 1.1597 |     - |     - |   5.35 KB |
+|                        BmarkGrace | 1.690 us | 0.0375 us | 0.0416 us |  0.44 | 0.6866 |     - |     - |   3.17 KB |
+|                    BmarkGraceMsDi | 2.287 us | 0.0225 us | 0.0211 us |  0.59 | 0.7401 |     - |     - |   3.41 KB |
 
 /
             */
 
             private IServiceProvider _msDi;
-            private IContainer _dryIoc;//, _dryIoc_UseInterpretation, _dryIoc_WoutFec;
+            private IContainer _dryIoc;
             private IServiceProvider _dryIocMsDi;
             private DependencyInjectionContainer _grace;
             private IServiceProvider _graceMsDi;
@@ -1196,8 +1198,6 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
             {
                 Measure(_msDi = PrepareMsDi());
                 Measure(_dryIoc = PrepareDryIoc());
-                //Measure(_dryIoc_UseInterpretation = PrepareDryIocWithOpts(true));
-                //Measure(_dryIoc_WoutFec = PrepareDryIocWithOpts(false, true));
                 Measure(_dryIocMsDi = PrepareDryIocMsDi());
                 Measure(_grace = PrepareGrace());
                 Measure(_graceMsDi = PrepareGraceMsDi());
@@ -1211,19 +1211,13 @@ Frequency=2156251 Hz, Resolution=463.7679 ns, Timer=TSC
             [Benchmark]
             public object BmarkDryIoc() => Measure(_dryIoc);
 
-            //[Benchmark]
-            //public object BmarkDryIoc_UseInterpretation() => Measure(_dryIoc_UseInterpretation);
-
-            //[Benchmark]
-            //public object BmarkDryIoc_WithoutFastExpressionCompiler() => Measure(_dryIoc_WoutFec);
-
             [Benchmark]
             public object BmarkDryIocMsDi() => Measure(_dryIocMsDi);
 
-            //[Benchmark]
+            [Benchmark]
             public object BmarkGrace() => Measure(_grace);
 
-            //[Benchmark]
+            [Benchmark]
             public object BmarkGraceMsDi() => Measure(_graceMsDi);
 
             //[Benchmark]

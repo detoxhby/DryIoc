@@ -2195,16 +2195,6 @@ namespace ImTools
         [MethodImpl((MethodImplOptions)256)]
         public static bool TryFind<V>(this ImMapSlot<V>[] slots, int key, out V value) =>
             slots[key & SLOT_MASK].TryFind(key & KEY_MASK, out value);
-
-        /// Adds the empty thingy with the default constructor and returns the created empty or the item already in the slot
-        [MethodImpl((MethodImplOptions)256)]
-        public static ImMapSlot<V> GetOrAddNew<V>(this ImMapSlot<V> slot, int key, out V value) where V : class, new()
-        {
-            value = slot.GetValueOrDefault(key);
-            return value != null ? slot
-                : slot.KeyPlusHeight == 0 ? new ImMapSlot<V>(key | 1, value = new V())
-                : slot.AddOnly(key, value = new V());
-        }
     }
 
     /// Slot used in `ImMapArray` where Height and Key is combined into one field
@@ -2269,7 +2259,16 @@ namespace ImTools
         internal static ImMapSlot<V> Branch(int key, V value, ImMapSlot<V> left, ImMapSlot<V> right) =>
             new ImMapSlot<V>(key | (left.Height > right.Height ? left.Height + 1 : right.Height + 1), value, left, right);
 
-        internal ImMapSlot<V> AddOrUpdate(int key, V value)
+        /// Adds the new value by key or replaces the existing one
+        [MethodImpl((MethodImplOptions)256)]
+        public ImMapSlot<V> AddOrUpdate(int key, V value) =>
+            KeyPlusHeight == 0
+                ? new ImMapSlot<V>(key, value)
+                : key == KeyPart
+                    ? new ImMapSlot<V>(key | Height, value, Left, Right)
+                    : AddOrUpdateImpl(key, value);
+
+        internal ImMapSlot<V> AddOrUpdateImpl(int key, V value)
         {
             if (key < KeyPart)
             {
@@ -2281,39 +2280,22 @@ namespace ImTools
 
                 if (Right.KeyPlusHeight == 0)
                 {
-                    // single rotation:
-                    //      5     =>     2
-                    //   2            1     5
-                    // 1              
                     if (key < Left.KeyPart)
                         return new ImMapSlot<V>(Left.KeyPart | 2, Left.Value, new ImMapSlot<V>(key | 1, value), new ImMapSlot<V>(KeyPart | 1, Value));
 
-                    // double rotation:
-                    //      5     =>     5     =>     4
-                    //   2            4            2     5
-                    //     4        2               
                     return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(Left.KeyPart | 1, Left.Value), new ImMapSlot<V>(KeyPart | 1, Value));
                 }
 
-                var left = Left.AddOrUpdate(key, value);
+                var left = Left.AddOrUpdateImpl(key, value);
 
                 if (left.Height > Right.Height + 1) // left is longer by 2, rotate left
                 {
                     var leftLeft = left.Left;
                     var leftRight = left.Right;
 
-                    // single rotation:
-                    //      5     =>     2
-                    //   2     6      1     5
-                    // 1   4              4   6
                     if (leftLeft.Height >= leftRight.Height)
                         return Branch(left.KeyPart, left.Value, leftLeft, Branch(KeyPart, Value, leftRight, Right));
 
-                    // double rotation:
-                    //      5     =>     5     =>     4
-                    //   2     6      4     6      2     5
-                    // 1   4        2   3        1   3     6
-                    //    3        1
                     return Branch(leftRight.KeyPart, leftRight.Value,
                         Branch(left.KeyPart, left.Value, leftLeft, leftRight.Left),
                         Branch(KeyPart, Value, leftRight.Right, Right));
@@ -2331,21 +2313,13 @@ namespace ImTools
 
                 if (Left.KeyPlusHeight == 0)
                 {
-                    // single rotation:
-                    //      5     =>     8     
-                    //         8      5     9
-                    //           9
                     if (key >= Right.KeyPart)
                         return new ImMapSlot<V>(Right.KeyPart | 2, Right.Value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(key | 1, value));
 
-                    // double rotation:
-                    //      5     =>     5     =>     7
-                    //         8            7      5     8
-                    //        7              8
                     return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(Right.KeyPart | 1, Right.Value));
                 }
 
-                var right = Right.AddOrUpdate(key, value);
+                var right = Right.AddOrUpdateImpl(key, value);
                 if (right.Height > Left.Height + 1)
                 {
                     var rightLeft = right.Left;
@@ -2363,12 +2337,24 @@ namespace ImTools
             }
         }
 
-        internal ImMapSlot<V> AddOnly(int key, V value)
+        /// Adds the new value by key or keeps the existing one if it is already stored
+        [MethodImpl((MethodImplOptions)256)]
+        public ImMapSlot<V> AddOrKeep(int key, V value) =>
+            KeyPlusHeight == 0
+                ? new ImMapSlot<V>(key, value)
+                : key == KeyPart
+                    ? this
+                    : AddOrKeepImpl(key, value);
+
+        internal ImMapSlot<V> AddOrKeepImpl(int key, V value)
         {
             if (key < KeyPart)
             {
                 if (Left.KeyPlusHeight == 0)
                     return new ImMapSlot<V>(KeyPart | 2, Value, new ImMapSlot<V>(key | 1, value), Right);
+
+                if (Left.KeyPart == key)
+                    return this;
 
                 if (Right.KeyPlusHeight == 0)
                 {
@@ -2378,7 +2364,9 @@ namespace ImTools
                     return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(Left.KeyPart | 1, Left.Value), new ImMapSlot<V>(KeyPart | 1, Value));
                 }
 
-                var left = Left.AddOrUpdate(key, value);
+                var left = Left.AddOrKeepImpl(key, value);
+                if (ReferenceEquals(left, Left))
+                    return this;
 
                 if (left.Height > Right.Height + 1) // left is longer by 2, rotate left
                 {
@@ -2400,6 +2388,9 @@ namespace ImTools
                 if (Right.KeyPlusHeight == 0)
                     return Branch(KeyPart | 2, Value, Left, new ImMapSlot<V>(key | 1, value));
 
+                if (Right.KeyPart == key)
+                    return this;
+
                 if (Left.KeyPlusHeight == 0)
                 {
                     if (key >= Right.KeyPart)
@@ -2408,7 +2399,10 @@ namespace ImTools
                     return new ImMapSlot<V>(key | 2, value, new ImMapSlot<V>(KeyPart | 1, Value), new ImMapSlot<V>(Right.KeyPart | 1, Right.Value));
                 }
 
-                var right = Right.AddOrUpdate(key, value);
+                var right = Right.AddOrKeepImpl(key, value);
+                if (ReferenceEquals(right, Right))
+                    return this;
+
                 if (right.Height > Left.Height + 1)
                 {
                     var rightLeft = right.Left;
@@ -2424,27 +2418,6 @@ namespace ImTools
 
                 return Branch(KeyPart, Value, Left, right);
             }
-        }
-
-        [MethodImpl((MethodImplOptions)256)]
-        internal ImMapSlot<V> GetOrAdd(int key, V newValue, out V value)
-        {
-            var slot = this;
-            while (slot.KeyPlusHeight != 0)
-            {
-                var theKey = slot.KeyPlusHeight & ImMapArray.KEY_MASK;
-                if (key == theKey)
-                {
-                    value = slot.Value;
-                    return this;
-                }
-                slot = key < theKey ? slot.Left : slot.Right;
-            }
-
-            value = newValue;
-            return KeyPlusHeight == 0 
-                ? new ImMapSlot<V>(key | 1, value) 
-                : AddOnly(key, value);
         }
 
         /// Finds the value by key or returns the default value for the type
