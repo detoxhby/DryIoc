@@ -3525,14 +3525,33 @@ namespace DryIoc
                     if (itemRef.Value != Scope.NoItem)
                         return itemRef.Value;
 
-                    if (lambdaArg is ConstantExpression lambdaConstExpr)
-                        result = ((FactoryDelegate)lambdaConstExpr.Value)(resolver);
+                    var factory = ((ConstantExpression)lambdaArg).Value;
+                    if (factory is Ref<object> facRef)
+                    {
+                        if (facRef.Value is Expression expr)
+                        {
+                            if (!TryInterpret(resolver, expr, paramExprs, paramValues, parentArgs, useFec, out result))
+                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)resolver).Rules.UseInterpretation)(resolver);
+                        }
+                        else
+                        {
+                            result = ((FactoryDelegate)facRef.Value)(resolver);
+                        }
+                    }
                     else
                     {
-                        var body = ((LambdaExpression)lambdaArg).Body;
-                        if (!TryInterpret(resolver, body, paramExprs, paramValues, parentArgs, useFec, out result))
-                            result = body.CompileToFactoryDelegate(useFec, ((IContainer)resolver).Rules.UseInterpretation)(resolver);
+                        result = ((FactoryDelegate)factory)(resolver);
                     }
+
+                    // OLD:
+                    //if (lambdaArg is ConstantExpression lambdaConstExpr)
+                    //    result = ((FactoryDelegate)lambdaConstExpr.Value)(resolver);
+                    //else
+                    //{
+                    //    var body = ((LambdaExpression)lambdaArg).Body;
+                    //    if (!TryInterpret(resolver, body, paramExprs, paramValues, parentArgs, useFec, out result))
+                    //        result = body.CompileToFactoryDelegate(useFec, ((IContainer)resolver).Rules.UseInterpretation)(resolver);
+                    //}
 
                     itemRef.Value = result;
                 }
@@ -10991,8 +11010,11 @@ namespace DryIoc
         /// Creates, stores, and returns created item
         object GetOrAdd(int id, CreateScopedValue createValue, int disposalOrder = 0);
 
-        /// Create the value via `FactoryDelegate` passing the `IResolverContext`
-        object GetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0);
+        /// <summary>Getso or creates the value via passed factory</summary>
+        object GetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0);
+
+        /// <summary>Getso or creates the value via passed factory</summary>
+        object GetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0);
 
         /// Creates, stores, and returns created item
         object TryGetOrAddWithoutClosure(int id,
@@ -11127,12 +11149,22 @@ namespace DryIoc
 
         /// <inheritdoc />
         [MethodImpl((MethodImplOptions)256)]
-        public object GetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
+        public object GetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
             var itemRef = _maps[id & MAP_COUNT_SUFFIX_MASK].GetEntryOrDefault(id);
             return itemRef != null && itemRef.Value != NoItem
                 ? itemRef.Value
-                : TryGetOrAddViaFactoryDelegate(id, createValue, r, disposalOrder);
+                : TryGetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalOrder);
+        }
+
+        /// <inheritdoc />
+        [MethodImpl((MethodImplOptions)256)]
+        public object GetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0)
+        {
+            var itemRef = _maps[id & MAP_COUNT_SUFFIX_MASK].GetEntryOrDefault(id);
+            return itemRef != null && itemRef.Value != NoItem
+                ? itemRef.Value
+                : TryGetOrAddViaFactoryDelegate(id, factory, r, disposalOrder);
         }
 
         internal static readonly MethodInfo GetOrAddViaFactoryDelegateMethod =
@@ -11165,7 +11197,7 @@ namespace DryIoc
             return itemRef;
         }
 
-        internal object TryGetOrAddViaFactoryDelegate(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
+        internal object TryGetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
         {
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
@@ -11184,6 +11216,45 @@ namespace DryIoc
                 if (itemRef.Value != NoItem)
                     return itemRef.Value;
                 itemRef.Value = createValue(r);
+            }
+
+            if (itemRef.Value is IDisposable disp && disp != this)
+            {
+                if (disposalOrder == 0)
+                    AddUnorderedDisposable(disp);
+                else
+                    AddDisposable(disp, disposalOrder);
+            }
+
+            return itemRef.Value;
+        }
+
+        internal object TryGetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0)
+        {
+            if (_disposed == 1)
+                Throw.It(Error.ScopeIsDisposed, ToString());
+
+            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
+            var m = map;
+            if (Interlocked.CompareExchange(ref map, m.AddOrKeep(id, NoItem), m) != m)
+                Ref.Swap(ref map, id, (x, i) => x.AddOrKeep(i, NoItem));
+
+            var itemRef = map.GetEntryOrDefault(id);
+            if (itemRef.Value != NoItem)
+                return itemRef.Value;
+
+            lock (itemRef)
+            {
+                if (itemRef.Value != NoItem)
+                    return itemRef.Value;
+
+                if (factory.Value is FactoryDelegate facDelegate)
+                    itemRef.Value = facDelegate(r);
+                else
+                {
+                    factory.Swap(x => x is Expression facExpr ? facExpr.CompileToFactoryDelegate(true, false) : x);
+                    itemRef.Value = ((FactoryDelegate)factory.Value)(r);
+                }
             }
 
             if (itemRef.Value is IDisposable disp && disp != this)
@@ -11644,12 +11715,14 @@ namespace DryIoc
                     request.CombineDecoratorWithDecoratedFactoryID() : request.FactoryID);
 
                 Expression factoryDelegateExpr;
+                Expression factoryRefExpr;
                 if (serviceFactoryExpr is InvocationExpression ie &&
                     ie.Expression is ConstantExpression registeredDelegateExpr &&
                     registeredDelegateExpr.Type == typeof(FactoryDelegate))
                 {
                     // optimization for the registered delegate
                     factoryDelegateExpr = registeredDelegateExpr;
+                    factoryRefExpr = registeredDelegateExpr;
                 }
                 else
                 {
@@ -11659,6 +11732,7 @@ namespace DryIoc
                         , typeof(object)
 #endif
                     );
+                    factoryRefExpr = Constant(new Ref<object>(serviceFactoryExpr));
                 }
 
                 var disposalIndex = request.Factory.Setup.DisposalOrder;
@@ -11673,15 +11747,15 @@ namespace DryIoc
                 {
                     if (disposalIndex == 0)
                         return Call(GetScopedViaFactoryDelegateNoDisposalIndexMethod,
-                            resolverContextParamExpr, ifNoScopeThrowExpr, idExpr, factoryDelegateExpr);
+                            resolverContextParamExpr, ifNoScopeThrowExpr, idExpr, factoryRefExpr);
 
                     return Call(GetScopedViaFactoryDelegateMethod, 
-                        resolverContextParamExpr, ifNoScopeThrowExpr, idExpr, factoryDelegateExpr, Constant(disposalIndex));
+                        resolverContextParamExpr, ifNoScopeThrowExpr, idExpr, factoryRefExpr, Constant(disposalIndex));
                 }
 
                 return Call(GetNameScopedViaFactoryDelegateMethod, resolverContextParamExpr,
                     request.Container.GetConstantExpression(Name, typeof(object)),
-                    ifNoScopeThrowExpr, idExpr, factoryDelegateExpr, Constant(disposalIndex));
+                    ifNoScopeThrowExpr, idExpr, factoryRefExpr, Constant(disposalIndex));
             }
         }
 
@@ -11732,7 +11806,7 @@ namespace DryIoc
         /// Subject
         public static object GetScopedOrSingletonViaFactoryDelegate(IResolverContext r,
             int id, FactoryDelegate createValue, int disposalIndex) =>
-            (r.CurrentScope ?? r.SingletonScope).GetOrAddViaFactoryDelegate(id, createValue, r, disposalIndex);
+            (r.CurrentScope ?? r.SingletonScope).GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
 
         internal static readonly MethodInfo GetScopedOrSingletonViaFactoryDelegateMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetScopedOrSingletonViaFactoryDelegate));
@@ -11750,17 +11824,27 @@ namespace DryIoc
             r.GetCurrentScope(throwIfNoScope)?.GetOrAdd(id, createValue, disposalIndex);
 
         /// Subject
-        public static object GetScopedViaFactoryDelegateNoDisposalIndex(IResolverContext r,
+        public static object GetScopedViaFactoryDelegateNoDisposalIndex_OLD(IResolverContext r,
             bool throwIfNoScope, int id, FactoryDelegate createValue) =>
-            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, createValue, r);
+            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r);
+
+        /// Subject
+        public static object GetScopedViaFactoryDelegateNoDisposalIndex(IResolverContext r,
+            bool throwIfNoScope, int id, Ref<object> factory) =>
+            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, factory, r);
 
         internal static readonly MethodInfo GetScopedViaFactoryDelegateNoDisposalIndexMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetScopedViaFactoryDelegateNoDisposalIndex));
 
         /// Subject
-        public static object GetScopedViaFactoryDelegate(IResolverContext r,
+        public static object GetScopedViaFactoryDelegate_OLD(IResolverContext r,
             bool throwIfNoScope, int id, FactoryDelegate createValue, int disposalIndex) =>
-            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, createValue, r, disposalIndex);
+            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
+
+        /// Subject
+        public static object GetScopedViaFactoryDelegate(IResolverContext r,
+            bool throwIfNoScope, int id, Ref<object> factory, int disposalIndex) =>
+            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, factory, r, disposalIndex);
 
         internal static readonly MethodInfo GetScopedViaFactoryDelegateMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetScopedViaFactoryDelegate));
@@ -11773,7 +11857,12 @@ namespace DryIoc
         /// Subject
         public static object GetNameScopedViaFactoryDelegate(IResolverContext r,
             object scopeName, bool throwIfNoScope, int id, FactoryDelegate createValue, int disposalIndex) =>
-            r.GetNamedScope(scopeName, throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, createValue, r, disposalIndex);
+            r.GetNamedScope(scopeName, throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
+
+        /// Subject
+        public static object GetNameScopedViaFactoryDelegate_OLD(IResolverContext r,
+            object scopeName, bool throwIfNoScope, int id, Ref<object> factory, int disposalIndex) =>
+            r.GetNamedScope(scopeName, throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, factory, r, disposalIndex);
 
         internal static readonly MethodInfo GetNameScopedViaFactoryDelegateMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetNameScopedViaFactoryDelegate));

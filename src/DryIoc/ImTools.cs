@@ -2109,6 +2109,7 @@ namespace ImTools
         /// <param name="initialValue">(optional) Initial value.</param>
         public Ref(T initialValue = default) => _value = initialValue;
 
+        // todo: In many cases it will be more practical to return the new value instead of the old one
         /// <summary>Exchanges currently hold object with <paramref name="getNewValue"/> - see <see cref="Ref.Swap{T}"/> for details.</summary>
         /// <param name="getNewValue">Delegate to produce new object value from current one passed as parameter.</param>
         /// <returns>Returns old object value the same way as <see cref="Interlocked.Exchange(ref int,int)"/></returns>
