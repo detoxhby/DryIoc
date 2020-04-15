@@ -11272,9 +11272,11 @@ namespace DryIoc
                             !Interpreter.TryInterpret(r, expr, FactoryDelegateCompiler.ResolverContextParamExpr,
                                 null, null, rules.UseFastExpressionCompiler, out itemRef.Value))
                         {
-                            factoryRef.Swap(rules, (x, r) => x is Expression e
-                                ? e.CompileToFactoryDelegate(r.UseFastExpressionCompiler, r.UseInterpretation)
-                                : x);
+                            if (!factoryRef.TrySwapIfStillCurrent(expr, 
+                                expr.CompileToFactoryDelegate(rules.UseFastExpressionCompiler, rules.UseInterpretation)))
+                                factoryRef.Swap(rules, (x, r) => x is Expression e
+                                    ? e.CompileToFactoryDelegate(r.UseFastExpressionCompiler, r.UseInterpretation)
+                                    : x);
                             itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
                         }
                     }

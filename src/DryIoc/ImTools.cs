@@ -2138,11 +2138,12 @@ namespace ImTools
         /// <summary>Compares current Referred value with <paramref name="currentValue"/> and if equal replaces current with <paramref name="newValue"/></summary>
         /// <param name="currentValue"></param> <param name="newValue"></param>
         /// <returns>True if current value was replaced with new value, and false if current value is outdated (already changed by other party).</returns>
-        /// <example><c>[!CDATA[
+        /// <example><code>[!CDATA[
         /// var value = SomeRef.Value;
         /// if (!SomeRef.TrySwapIfStillCurrent(value, Update(value))
         ///     SomeRef.Swap(v => Update(v)); // fallback to normal Swap with delegate allocation
-        /// ]]</c></example>
+        /// ]]</code></example>
+        [MethodImpl((MethodImplOptions)256)]
         public bool TrySwapIfStillCurrent(T currentValue, T newValue) =>
             Interlocked.CompareExchange(ref _value, newValue, currentValue) == currentValue;
     }
