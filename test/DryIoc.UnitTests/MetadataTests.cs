@@ -87,7 +87,7 @@ namespace DryIoc.UnitTests
         public void I_can_resolve_singleton_service_with_metadata()
         {
             var container = new Container();
-            container.Register<ServiceWithMetadata>(Reuse.Singleton, setup: Setup.With(metadataOrFuncOfMetadata: new Metadata { Assigned = true }));
+            container.Register<ServiceWithMetadata>(Reuse.Singleton, setup: Setup.With(new Metadata { Assigned = true }));
 
             var meta = container.Resolve<Meta<Func<ServiceWithMetadata>, Metadata>>();
             Assert.That(meta.Metadata.Assigned, Is.True);

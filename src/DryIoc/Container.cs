@@ -2780,7 +2780,7 @@ namespace DryIoc
             }
         }
 
-        /// <summary>Interprets passed expression</summary>
+        /// <summary>Interprets the passed expression</summary>
         public static bool TryInterpret(IResolverContext r, Expression expr, 
             object paramExprs, object paramValues, ParentLambdaArgs parentArgs, bool useFec, out object result)
         {
@@ -3295,29 +3295,14 @@ namespace DryIoc
             }
             else if (methodDeclaringType == typeof(IScope))
             {
-                var callArgs = callExpr.Arguments.ToListOrSelf();
                 if (method == Scope.GetOrAddViaFactoryDelegateMethod)
                 {
-                    r = r.Root ?? r;
-
-                    // check if scoped dependency is already in scope, then just return it
-                    var factoryId = (int) ConstValue(callArgs[0]);
-                    if (!r.SingletonScope.TryGet(out result, factoryId))
-                    {
-                        result = r.SingletonScope.TryGetOrAddWithoutClosure(factoryId, r,
-                            ((LambdaExpression) callArgs[1]).Body, useFec,
-                            (rc, e, uf) =>
-                            {
-                                if (TryInterpret(rc, e, paramExprs, paramValues, parentArgs, uf, out var value))
-                                    return value;
-                                return e.CompileToFactoryDelegate(uf, ((IContainer) rc).Rules.UseInterpretation)(rc);
-                            },
-                            (int) ConstValue(callArgs[3]));
-                    }
-
+                    result = InterpretGetSingletonViaFactoryDelegate(r.Root ?? r, callExpr, paramExprs, paramValues, parentArgs,
+                        useFec);
                     return true;
                 }
 
+                var callArgs = callExpr.Arguments.ToListOrSelf();
                 if (method == Scope.TrackDisposableMethod)
                 {
                     r = r.Root ?? r;
@@ -3464,8 +3449,8 @@ namespace DryIoc
             return true;
         }
 
-        private static object InterpretGetScopedViaFactoryDelegateNoDisposalIndex(IResolverContext resolver,
-    MethodCallExpression callExpr, object paramExprs, object paramValues, ParentLambdaArgs parentArgs, bool useFec)
+        private static object InterpretGetScopedViaFactoryDelegateNoDisposalIndex(IResolverContext r,
+            MethodCallExpression callExpr, object paramExprs, object paramValues, ParentLambdaArgs parentArgs, bool useFec)
         {
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
             var fewArgExpr = (FourArgumentsMethodCallExpression)callExpr;
@@ -3476,12 +3461,12 @@ namespace DryIoc
 #endif
             if (!ReferenceEquals(resolverArg, FactoryDelegateCompiler.ResolverContextParamExpr))
             {
-                if (!TryInterpret(resolver, resolverArg, paramExprs, paramValues, parentArgs, useFec, out var resolverObj))
+                if (!TryInterpret(r, resolverArg, paramExprs, paramValues, parentArgs, useFec, out var resolverObj))
                     return false;
-                resolver = (IResolverContext)resolverObj;
+                r = (IResolverContext)resolverObj;
             }
 
-            var scope = (Scope)resolver.CurrentScope;
+            var scope = (Scope)r.CurrentScope;
             if (scope == null)
             {
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
@@ -3489,7 +3474,7 @@ namespace DryIoc
 #else
                 var throwIfNoScopeArg = args[1];
 #endif
-                return (bool)((ConstantExpression)throwIfNoScopeArg).Value ? Throw.For<IScope>(Error.NoCurrentScope, resolver) : null;
+                return (bool)((ConstantExpression)throwIfNoScopeArg).Value ? Throw.For<IScope>(Error.NoCurrentScope, r) : null;
             }
 
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
@@ -3530,28 +3515,14 @@ namespace DryIoc
                     {
                         if (facRef.Value is Expression expr)
                         {
-                            if (!TryInterpret(resolver, expr, paramExprs, paramValues, parentArgs, useFec, out result))
-                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)resolver).Rules.UseInterpretation)(resolver);
+                            if (!TryInterpret(r, expr, paramExprs, paramValues, parentArgs, useFec, out result))
+                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)r).Rules.UseInterpretation)(r);
                         }
                         else
-                        {
-                            result = ((FactoryDelegate)facRef.Value)(resolver);
-                        }
+                            result = ((FactoryDelegate)facRef.Value)(r);
                     }
                     else
-                    {
-                        result = ((FactoryDelegate)factory)(resolver);
-                    }
-
-                    // OLD:
-                    //if (lambdaArg is ConstantExpression lambdaConstExpr)
-                    //    result = ((FactoryDelegate)lambdaConstExpr.Value)(resolver);
-                    //else
-                    //{
-                    //    var body = ((LambdaExpression)lambdaArg).Body;
-                    //    if (!TryInterpret(resolver, body, paramExprs, paramValues, parentArgs, useFec, out result))
-                    //        result = body.CompileToFactoryDelegate(useFec, ((IContainer)resolver).Rules.UseInterpretation)(resolver);
-                    //}
+                        result = ((FactoryDelegate)factory)(r);
 
                     itemRef.Value = result;
                 }
@@ -3685,18 +3656,26 @@ namespace DryIoc
             itemRef = map.GetEntryOrDefault(id);
             if (itemRef.Value == Scope.NoItem)
             {
-                var lambda = args[4];
+                var lambdaArg = args[4];
                 object result = null;
                 lock (itemRef)
                 {
                     if (itemRef.Value != Scope.NoItem)
                         return itemRef.Value;
 
-                    if (lambda is ConstantExpression lambdaConstExpr)
-                        result = ((FactoryDelegate)lambdaConstExpr.Value)(r);
-                    else if (!TryInterpret(r, ((LambdaExpression)lambda).Body, paramExprs, paramValues, parentArgs, useFec, out result))
-                        result = ((LambdaExpression)lambda).Body.CompileToFactoryDelegate(useFec,
-                            ((IContainer)r).Rules.UseInterpretation)(r);
+                    var factory = ((ConstantExpression)lambdaArg).Value;
+                    if (factory is Ref<object> facRef)
+                    {
+                        if (facRef.Value is Expression expr)
+                        {
+                            if (!TryInterpret(r, expr, paramExprs, paramValues, parentArgs, useFec, out result))
+                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)r).Rules.UseInterpretation)(r);
+                        }
+                        else
+                            result = ((FactoryDelegate)facRef.Value)(r);
+                    }
+                    else
+                        result = ((FactoryDelegate)factory)(r);
 
                     itemRef.Value = result;
                 }
@@ -3731,8 +3710,6 @@ namespace DryIoc
                 r = (IResolverContext)resolverObj;
             }
 
-            var scope = (Scope)(r.CurrentScope ?? r.SingletonScope);
-
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
             var factoryIdArg = fewArgExpr.Argument1;
 #else
@@ -3740,6 +3717,7 @@ namespace DryIoc
 #endif
             var id = (int)((ConstantExpression)factoryIdArg).Value;
 
+            var scope = (Scope)(r.CurrentScope ?? r.SingletonScope);
             ref var map = ref scope._maps[id & Scope.MAP_COUNT_SUFFIX_MASK];
             var itemRef = map.GetEntryOrDefault(id);
             if (itemRef != null && itemRef.Value != Scope.NoItem)
@@ -3757,9 +3735,9 @@ namespace DryIoc
             if (itemRef.Value == Scope.NoItem)
             {
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
-                var lambda = fewArgExpr.Argument2;
+                var lambdaArg = fewArgExpr.Argument2;
 #else
-                var lambda = args[2];
+                var lambdaArg = args[2];
 #endif
                 object result = null;
                 lock (itemRef)
@@ -3767,11 +3745,93 @@ namespace DryIoc
                     if (itemRef.Value != Scope.NoItem)
                         return itemRef.Value;
 
-                    if (lambda is ConstantExpression lambdaConstExpr)
-                        result = ((FactoryDelegate)lambdaConstExpr.Value)(r);
-                    else if (!TryInterpret(r, ((LambdaExpression)lambda).Body, paramExprs, paramValues, parentArgs, useFec, out result))
-                        result = ((LambdaExpression)lambda).Body.CompileToFactoryDelegate(useFec,
-                            ((IContainer)r).Rules.UseInterpretation)(r);
+                    var factory = ((ConstantExpression)lambdaArg).Value;
+                    if (factory is Ref<object> facRef)
+                    {
+                        if (facRef.Value is Expression expr)
+                        {
+                            if (!TryInterpret(r, expr, paramExprs, paramValues, parentArgs, useFec, out result))
+                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)r).Rules.UseInterpretation)(r);
+                        }
+                        else
+                            result = ((FactoryDelegate)facRef.Value)(r);
+                    }
+                    else
+                        result = ((FactoryDelegate)factory)(r);
+
+                    itemRef.Value = result;
+                }
+
+                if (result is IDisposable disp && disp != scope)
+                {
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
+                    var disposalOrderArg = fewArgExpr.Argument3;
+#else
+                    var disposalOrderArg = args[3];
+#endif
+                    var disposalOrder = (int)((ConstantExpression)disposalOrderArg).Value;
+                    if (disposalOrder == 0)
+                        scope.AddUnorderedDisposable(disp);
+                    else
+                        scope.AddDisposable(disp, disposalOrder);
+                }
+            }
+
+            return itemRef.Value;
+        }
+
+        private static object InterpretGetSingletonViaFactoryDelegate(IResolverContext r,
+            MethodCallExpression callExpr, object paramExprs, object paramValues, ParentLambdaArgs parentArgs, bool useFec)
+        {
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
+            var fewArgExpr = (FourArgumentsMethodCallExpression)callExpr;
+            var factoryIdArg = fewArgExpr.Argument0;
+#else
+            var args = callExpr.Arguments.ToListOrSelf();
+            var factoryIdArg = args[0];
+#endif
+            var id = (int)((ConstantExpression)factoryIdArg).Value;
+
+            var scope = (Scope)(r.SingletonScope);
+            ref var map = ref scope._maps[id & Scope.MAP_COUNT_SUFFIX_MASK];
+            var itemRef = map.GetEntryOrDefault(id);
+            if (itemRef != null && itemRef.Value != Scope.NoItem)
+                return itemRef.Value;
+
+            if (scope.IsDisposed)
+                Throw.It(Error.ScopeIsDisposed, scope.ToString());
+
+            var m = map;
+            if (Interlocked.CompareExchange(ref map, m.AddOrKeep(id, Scope.NoItem), m) != m)
+                Ref.Swap(ref map, id, (x, i) => x.AddOrKeep(i, Scope.NoItem));
+
+            itemRef = map.GetEntryOrDefault(id);
+            if (itemRef.Value == Scope.NoItem)
+            {
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
+                var lambdaArg = fewArgExpr.Argument1;
+#else
+                var lambdaArg = args[1];
+#endif
+                object result = null;
+                lock (itemRef)
+                {
+                    if (itemRef.Value != Scope.NoItem)
+                        return itemRef.Value;
+
+                    var factory = ((ConstantExpression)lambdaArg).Value;
+                    if (factory is Ref<object> facRef)
+                    {
+                        if (facRef.Value is Expression expr)
+                        {
+                            if (!TryInterpret(r, expr, paramExprs, paramValues, parentArgs, useFec, out result))
+                                result = expr.CompileToFactoryDelegate(useFec, ((IContainer)r).Rules.UseInterpretation)(r);
+                        }
+                        else
+                            result = ((FactoryDelegate)facRef.Value)(r);
+                    }
+                    else
+                        result = ((FactoryDelegate)factory)(r);
 
                     itemRef.Value = result;
                 }
@@ -11010,13 +11070,10 @@ namespace DryIoc
         /// Creates, stores, and returns created item
         object GetOrAdd(int id, CreateScopedValue createValue, int disposalOrder = 0);
 
-        /// <summary>Getso or creates the value via passed factory</summary>
-        object GetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0);
-
-        /// <summary>Getso or creates the value via passed factory</summary>
+        /// <summary>Gets or creates the value via passed factory</summary>
         object GetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0);
 
-        /// Creates, stores, and returns created item
+        /// Obsolete - no one uses it
         object TryGetOrAddWithoutClosure(int id,
             IResolverContext resolveContext, Expression expr, bool useFec,
             Func<IResolverContext, Expression, bool, object> createValue, int disposalOrder = 0);
@@ -11149,16 +11206,6 @@ namespace DryIoc
 
         /// <inheritdoc />
         [MethodImpl((MethodImplOptions)256)]
-        public object GetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
-        {
-            var itemRef = _maps[id & MAP_COUNT_SUFFIX_MASK].GetEntryOrDefault(id);
-            return itemRef != null && itemRef.Value != NoItem
-                ? itemRef.Value
-                : TryGetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalOrder);
-        }
-
-        /// <inheritdoc />
-        [MethodImpl((MethodImplOptions)256)]
         public object GetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0)
         {
             var itemRef = _maps[id & MAP_COUNT_SUFFIX_MASK].GetEntryOrDefault(id);
@@ -11197,39 +11244,7 @@ namespace DryIoc
             return itemRef;
         }
 
-        internal object TryGetOrAddViaFactoryDelegate_OLD(int id, FactoryDelegate createValue, IResolverContext r, int disposalOrder = 0)
-        {
-            if (_disposed == 1)
-                Throw.It(Error.ScopeIsDisposed, ToString());
-
-            ref var map = ref _maps[id & MAP_COUNT_SUFFIX_MASK];
-            var m = map;
-            if (Interlocked.CompareExchange(ref map, m.AddOrKeep(id, NoItem), m) != m)
-                Ref.Swap(ref map, id, (x, i) => x.AddOrKeep(i, NoItem));
-
-            var itemRef = map.GetEntryOrDefault(id);
-            if (itemRef.Value != NoItem)
-                return itemRef.Value;
-
-            lock (itemRef)
-            {
-                if (itemRef.Value != NoItem)
-                    return itemRef.Value;
-                itemRef.Value = createValue(r);
-            }
-
-            if (itemRef.Value is IDisposable disp && disp != this)
-            {
-                if (disposalOrder == 0)
-                    AddUnorderedDisposable(disp);
-                else
-                    AddDisposable(disp, disposalOrder);
-            }
-
-            return itemRef.Value;
-        }
-
-        internal object TryGetOrAddViaFactoryDelegate(int id, Ref<object> factory, IResolverContext r, int disposalOrder = 0)
+        internal object TryGetOrAddViaFactoryDelegate(int id, object factory, IResolverContext r, int disposalOrder = 0)
         {
             if (_disposed == 1)
                 Throw.It(Error.ScopeIsDisposed, ToString());
@@ -11248,13 +11263,26 @@ namespace DryIoc
                 if (itemRef.Value != NoItem)
                     return itemRef.Value;
 
-                if (factory.Value is FactoryDelegate facDelegate)
-                    itemRef.Value = facDelegate(r);
-                else
+                if (factory is Ref<object> factoryRef)
                 {
-                    factory.Swap(x => x is Expression facExpr ? facExpr.CompileToFactoryDelegate(true, false) : x);
-                    itemRef.Value = ((FactoryDelegate)factory.Value)(r);
+                    if (factoryRef.Value is Expression expr)
+                    {
+                        var rules = ((IContainer)r).Rules; // todo: hack for now
+                        if (!rules.UseInterpretation ||
+                            !Interpreter.TryInterpret(r, expr, FactoryDelegateCompiler.ResolverContextParamExpr,
+                                null, null, rules.UseFastExpressionCompiler, out itemRef.Value))
+                        {
+                            factoryRef.Swap(rules, (x, r) => x is Expression e
+                                ? e.CompileToFactoryDelegate(r.UseFastExpressionCompiler, r.UseInterpretation)
+                                : x);
+                            itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
+                        }
+                    }
+                    else
+                        itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
                 }
+                else
+                    itemRef.Value = ((FactoryDelegate)factory)(r);
             }
 
             if (itemRef.Value is IDisposable disp && disp != this)
@@ -11268,7 +11296,7 @@ namespace DryIoc
             return itemRef.Value;
         }
 
-        /// <inheritdoc />
+        /// Obsolete - no one uses it
         public object TryGetOrAddWithoutClosure(int id,
             IResolverContext resolveContext, Expression expr, bool useFec,
             Func<IResolverContext, Expression, bool, object> createValue, int disposalOrder = 0)
@@ -11647,12 +11675,7 @@ namespace DryIoc
                 ? request.CombineDecoratorWithDecoratedFactoryID() : request.FactoryID;
 
             return Call(ResolverContext.SingletonScopeExpr, Scope.GetOrAddViaFactoryDelegateMethod,
-                Constant(factoryId), Lambda<FactoryDelegate>(serviceFactoryExpr,
-                    FactoryDelegateCompiler.FactoryDelegateParamExprs
-#if SUPPORTS_FAST_EXPRESSION_COMPILER
-                    , typeof(object)
-#endif
-                ),
+                Constant(factoryId), Constant(new Ref<object>(serviceFactoryExpr)),
                 FactoryDelegateCompiler.ResolverContextParamExpr,
                 Constant(request.Factory.Setup.DisposalOrder));
         }
@@ -11714,24 +11737,15 @@ namespace DryIoc
                 var idExpr = Constant(request.FactoryType == FactoryType.Decorator ?
                     request.CombineDecoratorWithDecoratedFactoryID() : request.FactoryID);
 
-                Expression factoryDelegateExpr;
                 Expression factoryRefExpr;
                 if (serviceFactoryExpr is InvocationExpression ie &&
                     ie.Expression is ConstantExpression registeredDelegateExpr &&
                     registeredDelegateExpr.Type == typeof(FactoryDelegate))
                 {
-                    // optimization for the registered delegate
-                    factoryDelegateExpr = registeredDelegateExpr;
                     factoryRefExpr = registeredDelegateExpr;
                 }
                 else
                 {
-                    factoryDelegateExpr = Lambda<FactoryDelegate>(serviceFactoryExpr,
-                        FactoryDelegateCompiler.FactoryDelegateParamExprs
-#if SUPPORTS_FAST_EXPRESSION_COMPILER
-                        , typeof(object)
-#endif
-                    );
                     factoryRefExpr = Constant(new Ref<object>(serviceFactoryExpr));
                 }
 
@@ -11739,7 +11753,7 @@ namespace DryIoc
 
                 if (ScopedOrSingleton)
                     return Call(GetScopedOrSingletonViaFactoryDelegateMethod,
-                        resolverContextParamExpr, idExpr, factoryDelegateExpr, Constant(disposalIndex));
+                        resolverContextParamExpr, idExpr, factoryRefExpr, Constant(disposalIndex));
 
                 var ifNoScopeThrowExpr = Constant(request.IfUnresolved == IfUnresolved.Throw);
 
@@ -11805,8 +11819,8 @@ namespace DryIoc
 
         /// Subject
         public static object GetScopedOrSingletonViaFactoryDelegate(IResolverContext r,
-            int id, FactoryDelegate createValue, int disposalIndex) =>
-            (r.CurrentScope ?? r.SingletonScope).GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
+            int id, Ref<object> factory, int disposalIndex) =>
+            (r.CurrentScope ?? r.SingletonScope).GetOrAddViaFactoryDelegate(id, factory, r, disposalIndex);
 
         internal static readonly MethodInfo GetScopedOrSingletonViaFactoryDelegateMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetScopedOrSingletonViaFactoryDelegate));
@@ -11824,22 +11838,12 @@ namespace DryIoc
             r.GetCurrentScope(throwIfNoScope)?.GetOrAdd(id, createValue, disposalIndex);
 
         /// Subject
-        public static object GetScopedViaFactoryDelegateNoDisposalIndex_OLD(IResolverContext r,
-            bool throwIfNoScope, int id, FactoryDelegate createValue) =>
-            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r);
-
-        /// Subject
         public static object GetScopedViaFactoryDelegateNoDisposalIndex(IResolverContext r,
             bool throwIfNoScope, int id, Ref<object> factory) =>
             r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, factory, r);
 
         internal static readonly MethodInfo GetScopedViaFactoryDelegateNoDisposalIndexMethod =
             typeof(CurrentScopeReuse).GetTypeInfo().GetDeclaredMethod(nameof(GetScopedViaFactoryDelegateNoDisposalIndex));
-
-        /// Subject
-        public static object GetScopedViaFactoryDelegate_OLD(IResolverContext r,
-            bool throwIfNoScope, int id, FactoryDelegate createValue, int disposalIndex) =>
-            r.GetCurrentScope(throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
 
         /// Subject
         public static object GetScopedViaFactoryDelegate(IResolverContext r,
@@ -11856,11 +11860,6 @@ namespace DryIoc
 
         /// Subject
         public static object GetNameScopedViaFactoryDelegate(IResolverContext r,
-            object scopeName, bool throwIfNoScope, int id, FactoryDelegate createValue, int disposalIndex) =>
-            r.GetNamedScope(scopeName, throwIfNoScope)?.GetOrAddViaFactoryDelegate_OLD(id, createValue, r, disposalIndex);
-
-        /// Subject
-        public static object GetNameScopedViaFactoryDelegate_OLD(IResolverContext r,
             object scopeName, bool throwIfNoScope, int id, Ref<object> factory, int disposalIndex) =>
             r.GetNamedScope(scopeName, throwIfNoScope)?.GetOrAddViaFactoryDelegate(id, factory, r, disposalIndex);
 
