@@ -3936,6 +3936,7 @@ namespace DryIoc
             if (expression is ConstantExpression constExpr)
                 return constExpr.Value.ToFactoryDelegate;
 
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
             if (!preferInterpretation && useFastExpressionCompiler)
             {
                 var factoryDelegate = (FactoryDelegate)(FastExpressionCompiler.LightExpression.ExpressionCompiler.TryCompileBoundToFirstClosureParam(
@@ -3947,7 +3948,6 @@ namespace DryIoc
 
             // fallback for platforms when FastExpressionCompiler is not supported,
             // or just in case when some expression is not supported (did not found one yet)
-#if SUPPORTS_FAST_EXPRESSION_COMPILER
             return Lambda<FactoryDelegate>(expression, FactoryDelegateParamExprs, typeof(object)).ToLambdaExpression()
 #else
             return Lambda<FactoryDelegate>(expression, FactoryDelegateParamExprs)
@@ -3963,6 +3963,7 @@ namespace DryIoc
         public static object CompileToFactoryDelegate(this Expression expression, 
             Type factoryDelegateType, Type resultType,  bool useFastExpressionCompiler, bool preferInterpretation)
         {
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
             if (!preferInterpretation && useFastExpressionCompiler)
             {
                 var factoryDelegate = (FastExpressionCompiler.LightExpression.ExpressionCompiler.TryCompileBoundToFirstClosureParam(
@@ -3974,7 +3975,6 @@ namespace DryIoc
 
             // fallback for platforms when FastExpressionCompiler is not supported,
             // or just in case when some expression is not supported (did not found one yet)
-#if SUPPORTS_FAST_EXPRESSION_COMPILER
             return Lambda(factoryDelegateType, expression, FactoryDelegateParamExprs, resultType).ToLambdaExpression()
 #else
             return Lambda(factoryDelegateType, expression, FactoryDelegateParamExprs)
@@ -3996,6 +3996,7 @@ namespace DryIoc
             if (expression is ConstantExpression ce)
                 return ce.Value.ToFactoryDelegate;
 
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
             if (useFastExpressionCompiler)
             {
                 var factoryDelegate = (FactoryDelegate)(FastExpressionCompiler.LightExpression.ExpressionCompiler.TryCompileBoundToFirstClosureParam(
@@ -4008,7 +4009,6 @@ namespace DryIoc
 
             // fallback for platforms when FastExpressionCompiler is not supported,
             // or just in case when some expression is not supported (did not found one yet)
-#if SUPPORTS_FAST_EXPRESSION_COMPILER
             return Lambda<FactoryDelegate>(expression, FactoryDelegateParamExprs, typeof(object)).ToLambdaExpression().Compile();
 #else
             return Lambda<FactoryDelegate>(expression, FactoryDelegateParamExprs).Compile();
@@ -13508,9 +13508,12 @@ namespace DryIoc
                 : asmDefinedTypesProperty.PropertyType == typeof(IEnumerable<TypeInfo>)
                     ? Call(typeof(Portable).SingleMethod(nameof(ToTypes), true), Property(asmExpr, asmDefinedTypesProperty))
                     : (Expression)Property(asmExpr, asmDefinedTypesProperty);
-
+#if SUPPORTS_FAST_EXPRESSION_COMPILER
             return FastExpressionCompiler.LightExpression.ExpressionCompiler.CompileFast(
                 Lambda<Func<Assembly, IEnumerable<Type>>>(typesExpr, asmExpr));
+#else
+            return Lambda<Func<Assembly, IEnumerable<Type>>>(typesExpr, asmExpr).Compile();
+#endif
         }
 
         internal static IEnumerable<Type> ToTypes(IEnumerable<TypeInfo> x) => x.Select(t => t.AsType());
