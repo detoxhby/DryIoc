@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Web.Http;
 using DryIoc;
 using DryIoc.WebApi;
@@ -45,14 +46,35 @@ namespace LoadTest
 
             var controllerTypes = TestHelper.GetAllControllers();
 
-            for (var depth = 1; depth < 50; depth++)
+            Console.WriteLine("First without depth... a very big depth");
+            TryDepth(int.MaxValue, controllerTypes);
+
+            for (var depth = 1; depth < 20; depth++)
             {
-                Console.WriteLine("Depth " + depth);
+                TryDepth(depth, controllerTypes);
+            }
+        }
 
-                var container = GetContainerForTest(depth);
+        private static void TryDepth(int depth, Type[] controllerTypes)
+        {
+            Console.WriteLine("Depth " + depth);
 
+            var container = GetContainerForTest(depth);
+
+            try
+            {
                 ResolveAllControllers(container, controllerTypes);
                 ResolveAllControllers(container, controllerTypes);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed with '{ex.Message}'");
+
+                var sw = Stopwatch.StartNew();
+                GC.Collect(2, GCCollectionMode.Forced);
+                GC.WaitForFullGCComplete();
+                Console.WriteLine($"GC complete in {sw.ElapsedMilliseconds:## ###} ms");
+                sw.Stop();
             }
         }
     }

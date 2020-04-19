@@ -12,8 +12,7 @@ namespace LoadTest
         {
             var container = new Container((rules) =>
                 rules
-                    .WithoutFastExpressionCompiler()
-                    .WithoutDependencyDepthToSplitObjectGraph()
+                    //.WithoutFastExpressionCompiler()
                     .WithoutInterpretationForTheFirstResolution()
                     .WithoutUseInterpretation()
                     .With(FactoryMethod.ConstructorWithResolvableArguments)

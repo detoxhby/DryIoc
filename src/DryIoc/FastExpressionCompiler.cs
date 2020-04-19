@@ -1101,24 +1101,20 @@ namespace FastExpressionCompiler.LightExpression
 
                     case ExpressionType.Invoke:
                         var invokeExpr = (InvocationExpression)expr;
-                        var invokeArgs = invokeExpr.Arguments;
-                        var invokeArgsCount = invokeArgs.Count;
-                        if (invokeArgsCount == 0)
-                        {
-                            // optimization #138: we inline the invoked lambda body (only for lambdas without arguments)
-                            // therefore we skipping collecting the lambda and invocation arguments and got directly to lambda body.
-                            // This approach is repeated in `TryEmitInvoke`
-                            expr = (invokeExpr.Expression as LambdaExpression)?.Body ?? invokeExpr.Expression;
-                            continue;
-                        }
-                        else if (!TryCollectBoundConstants(ref closure, invokeExpr.Expression, paramExprs, isNestedLambda, ref rootClosure))
+                        if (!TryCollectBoundConstants(ref closure, invokeExpr.Expression, paramExprs, isNestedLambda, ref rootClosure))
                             return false;
 
-                        for (var i = 0; i < invokeArgs.Count - 1; i++)
-                            if (!TryCollectBoundConstants(ref closure, invokeArgs[i], paramExprs, isNestedLambda, ref rootClosure))
-                                return false;
+                        var invokeArgs = invokeExpr.Arguments;
+                        var invokeArgsCount = invokeArgs.Count;
+                        if (invokeArgsCount > 0)
+                        {
+                            if (invokeArgsCount > 1)
+                                for (var i = 0; i < invokeArgsCount - 1; i++)
+                                    if (!TryCollectBoundConstants(ref closure, invokeArgs[i], paramExprs, isNestedLambda, ref rootClosure))
+                                        return false;
+                            expr = invokeArgs[invokeArgsCount - 1];
+                        }
 
-                        expr = invokeArgs[invokeArgsCount - 1];
                         continue;
 
                     case ExpressionType.Conditional:
@@ -1556,13 +1552,6 @@ namespace FastExpressionCompiler.LightExpression
                             return TryEmitNestedLambda((LambdaExpression)expr, paramExprs, il, ref closure);
 
                         case ExpressionType.Invoke:
-                            // optimization #138: we inline the invoked lambda body (only for lambdas without arguments) 
-                            if (((InvocationExpression)expr).Expression is LambdaExpression lambdaExpr && lambdaExpr.Parameters.Count == 0)
-                            {
-                                expr = lambdaExpr.Body;
-                                continue;
-                            }
-
                             return TryEmitInvoke((InvocationExpression)expr, paramExprs, il, ref closure, parent);
 
                         case ExpressionType.GreaterThan:

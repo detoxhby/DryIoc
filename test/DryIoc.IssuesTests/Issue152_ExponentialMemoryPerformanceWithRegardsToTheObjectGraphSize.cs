@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using NUnit.Framework;
@@ -11,41 +11,60 @@ namespace DryIoc.IssuesTests
         [Test]
         public void Main()
         {
-            var c = new Container(rules => rules.WithDependencyDepthToSplitObjectGraph(3));
-            c.Register<AggQ>(Reuse.InCurrentScope);
-            c.Register<AggP>(Reuse.InCurrentScope);
-            c.Register<Root>(Reuse.InCurrentScope);
+            var c = new Container(rules => rules.WithDependencyDepthToSplitObjectGraph(1));
+
+            c.Register<AggQ>();
+            c.Register<AggP>();
+            c.Register<Root>();
+            c.Register<D1>();
+            c.Register<D2>();
+            c.Register<R>();
+
             RegisterIn(c);
 
-            using (var scope = c.OpenScope())
-            {
-                var rootExpr = scope.Resolve<LambdaExpression>(typeof(Root));
-                var rootStr = rootExpr.ToString();
-                var resolveCallIndex = rootStr.IndexOf("Resolve(", StringComparison.Ordinal);
-                Assert.AreNotEqual(-1, resolveCallIndex);
-            }
+            var rootExpr = c.Resolve<LambdaExpression>(typeof(R));
+
+            var rootStr = rootExpr.ToString(); 
+            var resolveCallIndex = rootStr.IndexOf("() =>", StringComparison.Ordinal);
+            Assert.AreNotEqual(-1, resolveCallIndex);
         }
 
         [Test]
         public void Main_negative()
         {
             var c = new Container(rules => rules.WithoutDependencyDepthToSplitObjectGraph());
-            c.Register<AggQ>(Reuse.InCurrentScope);
-            c.Register<AggP>(Reuse.InCurrentScope);
-            c.Register<Root>(Reuse.InCurrentScope);
+            c.Register<AggQ>();
+            c.Register<AggP>();
+            c.Register<D1>();
+            c.Register<D2>();
+            c.Register<R>();
+
             RegisterIn(c);
 
-            using (var scope = c.OpenScope())
-            {
-                var rootExpr = scope.Resolve<LambdaExpression>(typeof(Root));
-                var rootStr = rootExpr.ToString();
-                var resolveCallIndex = rootStr.IndexOf("Resolve(", StringComparison.Ordinal);
-                Assert.AreEqual(-1, resolveCallIndex);
-            }
+            var rootExpr = c.Resolve<LambdaExpression>(typeof(R));
+            var rootStr = rootExpr.ToString();
+            var resolveCallIndex = rootStr.IndexOf("() =>", StringComparison.Ordinal);
+            Assert.AreEqual(-1, resolveCallIndex);
         }
 
         public interface IP { }
         public interface IQ { }
+
+        public class R
+        {
+            public R(D1 d1, D2 d2) { }
+        }
+
+        public class D1
+        {
+            public D1(AggP ap, AggQ aq) {} 
+        }
+
+        public class D2
+        {
+            public D2(AggP ap, AggQ aq) { }
+        }
+
         public class AggP { public AggP(IEnumerable<IP> ps) { } }
         public class AggQ { public AggQ(IEnumerable<IQ> qs) { } }
         public class Root { public Root(IEnumerable<AggQ> qs) { } }
@@ -153,106 +172,106 @@ namespace DryIoc.IssuesTests
 
         public static void RegisterIn(Container c)
         {
-            c.Register<IP, P1>(Reuse.InCurrentScope);
-            c.Register<IP, P2>(Reuse.InCurrentScope);
-            c.Register<IP, P3>(Reuse.InCurrentScope);
-            c.Register<IP, P4>(Reuse.InCurrentScope);
-            c.Register<IP, P5>(Reuse.InCurrentScope);
-            c.Register<IP, P6>(Reuse.InCurrentScope);
-            c.Register<IP, P7>(Reuse.InCurrentScope);
-            c.Register<IP, P8>(Reuse.InCurrentScope);
-            c.Register<IP, P9>(Reuse.InCurrentScope);
-            c.Register<IP, P10>(Reuse.InCurrentScope);
-            c.Register<IP, P11>(Reuse.InCurrentScope);
-            c.Register<IP, P12>(Reuse.InCurrentScope);
-            c.Register<IP, P13>(Reuse.InCurrentScope);
-            c.Register<IP, P14>(Reuse.InCurrentScope);
-            c.Register<IP, P15>(Reuse.InCurrentScope);
-            c.Register<IP, P16>(Reuse.InCurrentScope);
-            c.Register<IP, P17>(Reuse.InCurrentScope);
-            c.Register<IP, P18>(Reuse.InCurrentScope);
-            c.Register<IP, P19>(Reuse.InCurrentScope);
-            c.Register<IP, P20>(Reuse.InCurrentScope);
-            c.Register<IP, P21>(Reuse.InCurrentScope);
-            c.Register<IP, P22>(Reuse.InCurrentScope);
-            c.Register<IP, P23>(Reuse.InCurrentScope);
-            c.Register<IP, P24>(Reuse.InCurrentScope);
-            c.Register<IP, P25>(Reuse.InCurrentScope);
-            c.Register<IP, P26>(Reuse.InCurrentScope);
-            c.Register<IP, P27>(Reuse.InCurrentScope);
-            c.Register<IP, P28>(Reuse.InCurrentScope);
-            c.Register<IP, P29>(Reuse.InCurrentScope);
-            c.Register<IP, P30>(Reuse.InCurrentScope);
-            c.Register<IP, P31>(Reuse.InCurrentScope);
-            c.Register<IP, P32>(Reuse.InCurrentScope);
-            c.Register<IP, P33>(Reuse.InCurrentScope);
-            c.Register<IP, P34>(Reuse.InCurrentScope);
-            c.Register<IP, P35>(Reuse.InCurrentScope);
-            c.Register<IP, P36>(Reuse.InCurrentScope);
-            c.Register<IP, P37>(Reuse.InCurrentScope);
-            c.Register<IP, P38>(Reuse.InCurrentScope);
-            c.Register<IP, P39>(Reuse.InCurrentScope);
-            c.Register<IP, P40>(Reuse.InCurrentScope);
-            c.Register<IP, P41>(Reuse.InCurrentScope);
-            c.Register<IP, P42>(Reuse.InCurrentScope);
-            c.Register<IP, P43>(Reuse.InCurrentScope);
-            c.Register<IP, P44>(Reuse.InCurrentScope);
-            c.Register<IP, P45>(Reuse.InCurrentScope);
-            c.Register<IP, P46>(Reuse.InCurrentScope);
-            c.Register<IP, P47>(Reuse.InCurrentScope);
-            c.Register<IP, P48>(Reuse.InCurrentScope);
-            c.Register<IP, P49>(Reuse.InCurrentScope);
-            c.Register<IP, P50>(Reuse.InCurrentScope);
-            c.Register<IQ, Q1>(Reuse.InCurrentScope);
-            c.Register<IQ, Q2>(Reuse.InCurrentScope);
-            c.Register<IQ, Q3>(Reuse.InCurrentScope);
-            c.Register<IQ, Q4>(Reuse.InCurrentScope);
-            c.Register<IQ, Q5>(Reuse.InCurrentScope);
-            c.Register<IQ, Q6>(Reuse.InCurrentScope);
-            c.Register<IQ, Q7>(Reuse.InCurrentScope);
-            c.Register<IQ, Q8>(Reuse.InCurrentScope);
-            c.Register<IQ, Q9>(Reuse.InCurrentScope);
-            c.Register<IQ, Q10>(Reuse.InCurrentScope);
-            c.Register<IQ, Q11>(Reuse.InCurrentScope);
-            c.Register<IQ, Q12>(Reuse.InCurrentScope);
-            c.Register<IQ, Q13>(Reuse.InCurrentScope);
-            c.Register<IQ, Q14>(Reuse.InCurrentScope);
-            c.Register<IQ, Q15>(Reuse.InCurrentScope);
-            c.Register<IQ, Q16>(Reuse.InCurrentScope);
-            c.Register<IQ, Q17>(Reuse.InCurrentScope);
-            c.Register<IQ, Q18>(Reuse.InCurrentScope);
-            c.Register<IQ, Q19>(Reuse.InCurrentScope);
-            c.Register<IQ, Q20>(Reuse.InCurrentScope);
-            c.Register<IQ, Q21>(Reuse.InCurrentScope);
-            c.Register<IQ, Q22>(Reuse.InCurrentScope);
-            c.Register<IQ, Q23>(Reuse.InCurrentScope);
-            c.Register<IQ, Q24>(Reuse.InCurrentScope);
-            c.Register<IQ, Q25>(Reuse.InCurrentScope);
-            c.Register<IQ, Q26>(Reuse.InCurrentScope);
-            c.Register<IQ, Q27>(Reuse.InCurrentScope);
-            c.Register<IQ, Q28>(Reuse.InCurrentScope);
-            c.Register<IQ, Q29>(Reuse.InCurrentScope);
-            c.Register<IQ, Q30>(Reuse.InCurrentScope);
-            c.Register<IQ, Q31>(Reuse.InCurrentScope);
-            c.Register<IQ, Q32>(Reuse.InCurrentScope);
-            c.Register<IQ, Q33>(Reuse.InCurrentScope);
-            c.Register<IQ, Q34>(Reuse.InCurrentScope);
-            c.Register<IQ, Q35>(Reuse.InCurrentScope);
-            c.Register<IQ, Q36>(Reuse.InCurrentScope);
-            c.Register<IQ, Q37>(Reuse.InCurrentScope);
-            c.Register<IQ, Q38>(Reuse.InCurrentScope);
-            c.Register<IQ, Q39>(Reuse.InCurrentScope);
-            c.Register<IQ, Q40>(Reuse.InCurrentScope);
-            c.Register<IQ, Q41>(Reuse.InCurrentScope);
-            c.Register<IQ, Q42>(Reuse.InCurrentScope);
-            c.Register<IQ, Q43>(Reuse.InCurrentScope);
-            c.Register<IQ, Q44>(Reuse.InCurrentScope);
-            c.Register<IQ, Q45>(Reuse.InCurrentScope);
-            c.Register<IQ, Q46>(Reuse.InCurrentScope);
-            c.Register<IQ, Q47>(Reuse.InCurrentScope);
-            c.Register<IQ, Q48>(Reuse.InCurrentScope);
-            c.Register<IQ, Q49>(Reuse.InCurrentScope);
-            c.Register<IQ, Q50>(Reuse.InCurrentScope);
+            c.Register<IP, P1> ();
+            c.Register<IP, P2> ();
+            c.Register<IP, P3> ();
+            c.Register<IP, P4> ();
+            c.Register<IP, P5> ();
+            c.Register<IP, P6> ();
+            c.Register<IP, P7> ();
+            c.Register<IP, P8> ();
+            c.Register<IP, P9> ();
+            c.Register<IP, P10>();
+            c.Register<IP, P11>();
+            c.Register<IP, P12>();
+            c.Register<IP, P13>();
+            c.Register<IP, P14>();
+            c.Register<IP, P15>();
+            c.Register<IP, P16>();
+            c.Register<IP, P17>();
+            c.Register<IP, P18>();
+            c.Register<IP, P19>();
+            c.Register<IP, P20>();
+            c.Register<IP, P21>();
+            c.Register<IP, P22>();
+            c.Register<IP, P23>();
+            c.Register<IP, P24>();
+            c.Register<IP, P25>();
+            c.Register<IP, P26>();
+            c.Register<IP, P27>();
+            c.Register<IP, P28>();
+            c.Register<IP, P29>();
+            c.Register<IP, P30>();
+            c.Register<IP, P31>();
+            c.Register<IP, P32>();
+            c.Register<IP, P33>();
+            c.Register<IP, P34>();
+            c.Register<IP, P35>();
+            c.Register<IP, P36>();
+            c.Register<IP, P37>();
+            c.Register<IP, P38>();
+            c.Register<IP, P39>();
+            c.Register<IP, P40>();
+            c.Register<IP, P41>();
+            c.Register<IP, P42>();
+            c.Register<IP, P43>();
+            c.Register<IP, P44>();
+            c.Register<IP, P45>();
+            c.Register<IP, P46>();
+            c.Register<IP, P47>();
+            c.Register<IP, P48>();
+            c.Register<IP, P49>();
+            c.Register<IP, P50>();
+            c.Register<IQ, Q1> ();
+            c.Register<IQ, Q2> ();
+            c.Register<IQ, Q3> ();
+            c.Register<IQ, Q4> ();
+            c.Register<IQ, Q5> ();
+            c.Register<IQ, Q6> ();
+            c.Register<IQ, Q7> ();
+            c.Register<IQ, Q8> ();
+            c.Register<IQ, Q9> ();
+            c.Register<IQ, Q10>();
+            c.Register<IQ, Q11>();
+            c.Register<IQ, Q12>();
+            c.Register<IQ, Q13>();
+            c.Register<IQ, Q14>();
+            c.Register<IQ, Q15>();
+            c.Register<IQ, Q16>();
+            c.Register<IQ, Q17>();
+            c.Register<IQ, Q18>();
+            c.Register<IQ, Q19>();
+            c.Register<IQ, Q20>();
+            c.Register<IQ, Q21>();
+            c.Register<IQ, Q22>();
+            c.Register<IQ, Q23>();
+            c.Register<IQ, Q24>();
+            c.Register<IQ, Q25>();
+            c.Register<IQ, Q26>();
+            c.Register<IQ, Q27>();
+            c.Register<IQ, Q28>();
+            c.Register<IQ, Q29>();
+            c.Register<IQ, Q30>();
+            c.Register<IQ, Q31>();
+            c.Register<IQ, Q32>();
+            c.Register<IQ, Q33>();
+            c.Register<IQ, Q34>();
+            c.Register<IQ, Q35>();
+            c.Register<IQ, Q36>();
+            c.Register<IQ, Q37>();
+            c.Register<IQ, Q38>();
+            c.Register<IQ, Q39>();
+            c.Register<IQ, Q40>();
+            c.Register<IQ, Q41>();
+            c.Register<IQ, Q42>();
+            c.Register<IQ, Q43>();
+            c.Register<IQ, Q44>();
+            c.Register<IQ, Q45>();
+            c.Register<IQ, Q46>();
+            c.Register<IQ, Q47>();
+            c.Register<IQ, Q48>();
+            c.Register<IQ, Q49>();
+            c.Register<IQ, Q50>();
         }
     }
 }

@@ -5241,7 +5241,7 @@ namespace DryIoc
             DefaultDependencyDepthToSplitObjectGraph, null, null, null, null, null);
          
         /// <summary>Default value for <see cref="DependencyDepthToSplitObjectGraph"/></summary>
-        public const int DefaultDependencyDepthToSplitObjectGraph = 20;
+        public const int DefaultDependencyDepthToSplitObjectGraph = 6;
 
         /// <summary>Nested dependency depth to split an object graph</summary>
         public int DependencyDepthToSplitObjectGraph { get; private set; }
@@ -8244,7 +8244,7 @@ namespace DryIoc
         IsGeneratedResolutionDependencyExpression = 1 << 8,
 
         /// <summary>Non inherited. Indicates the root service inside the function.</summary>
-        IsDirectlyWrappedInFunc = 1 << 9
+        IsDirectlyWrappedInFunc = 1 << 9,
     }
 
     /// Helper extension methods to use on the bunch of factories instead of lambdas to minimize allocations
@@ -9600,13 +9600,14 @@ namespace DryIoc
             if ((request.Flags & RequestFlags.IsGeneratedResolutionDependencyExpression) == 0 &&
                 !request.OpensResolutionScope && (
                     setup.OpenResolutionScope || 
-                    !request.IsResolutionCall && (
-                      setup.AsResolutionCall || 
-                      setup.AsResolutionCallForExpressionGeneration && rules.UsedForExpressionGeneration ||
-                      setup.UseParentReuse ||
-                      request.FactoryType == FactoryType.Service && request.DependencyDepth > rules.DependencyDepthToSplitObjectGraph
-                  ) &&
-                    request.GetActualServiceType() != typeof(void))
+                    !request.IsResolutionCall 
+                    && (setup.AsResolutionCall 
+                        || setup.AsResolutionCallForExpressionGeneration && rules.UsedForExpressionGeneration 
+                        || setup.UseParentReuse 
+                        || request.FactoryType == FactoryType.Service
+                              && !rules.UseFastExpressionCompiler // FEC uses look-ahead nested lambda wrapping defined below
+                              && request.DependencyDepth > rules.DependencyDepthToSplitObjectGraph) 
+                    && request.GetActualServiceType() != typeof(void))
                 )
                 return Resolver.CreateResolutionExpression(request, setup.OpenResolutionScope);
 
@@ -9642,6 +9643,37 @@ namespace DryIoc
 
                     if (serviceExpr.Type != originalServiceExprType)
                         serviceExpr = Convert(serviceExpr, originalServiceExprType);
+                }
+                else
+                {
+                    if (rules.UseFastExpressionCompiler &&
+                        request.DependencyDepth > rules.DependencyDepthToSplitObjectGraph)
+                    {
+                        if (serviceExpr is NewExpression newExpr)
+                        {
+                            var split = false;
+                            var args = newExpr.Arguments;
+                            if (args.Count > 1) // todo: now we are ignoring narrow - 1 argument constrctors
+                            {
+                                foreach (var arg in args)
+                                {
+                                    // check that we have two level graph - the nested arguments
+                                    if (arg is NewExpression argNewExpr && argNewExpr.Arguments.Count > 0) 
+                                    {
+                                        split = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (split)
+                            {
+                                serviceExpr = Convert(
+                                    Invoke(Lambda(typeof(Func<object>), serviceExpr, Empty<ParameterExpression>()), Empty<Expression>()),
+                                    serviceExpr.Type);
+                            }
+                        }
+                    }
                 }
 
                 if (mayCache)
