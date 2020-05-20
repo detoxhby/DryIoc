@@ -13,7 +13,7 @@ namespace LoadTest
         {
             var container = new Container((rules) =>
                 rules
-                    .WithDependencyDepthToSplitObjectGraph(depth)
+                    .WithDependencyCountInLambdaToSplitBigObjectGraph(depth)
                     .WithoutInterpretationForTheFirstResolution()
                     .WithoutUseInterpretation()
                     .With(FactoryMethod.ConstructorWithResolvableArguments)
@@ -26,6 +26,8 @@ namespace LoadTest
 
         private static void ResolveAllControllers(IContainer container, Type[] controllerTypes)
         {
+            Console.WriteLine($"Starting resolving all {controllerTypes.Length} controllers...");
+            var sw = Stopwatch.StartNew();
             foreach (var controllerType in controllerTypes)
             {
                 using (var scope = container.OpenScope(Reuse.WebRequestScopeName))
@@ -38,20 +40,27 @@ namespace LoadTest
                     }
                 }
             }
+            
+            Console.WriteLine($"Finished resolving controllers in '{sw.Elapsed.TotalMilliseconds}' ms");
+            sw.Stop();
         }
 
         public static void Start()
         {
-            Console.WriteLine("Starting WithDependencyDepthToSplitObjectGraph test");
+            Console.WriteLine("# Starting Object Graph split test");
 
             var controllerTypes = TestHelper.GetAllControllers();
 
-            Console.WriteLine("First without depth... a very big depth");
-            TryDepth(int.MaxValue, controllerTypes);
-
-            for (var depth = 1; depth < 20; depth++)
+            for (var depth = 5; depth < 2000; depth+=200)
             {
-                TryDepth(depth, controllerTypes);
+                Console.WriteLine("## DependencyCount - " + depth);
+
+                var container = GetContainerForTest(depth);
+
+                Console.WriteLine("### Resolving 1st time:");
+                ResolveAllControllers(container, controllerTypes);
+                Console.WriteLine("### Resolving 2nd time:");
+                ResolveAllControllers(container, controllerTypes);
             }
         }
 

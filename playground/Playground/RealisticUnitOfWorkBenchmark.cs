@@ -1046,13 +1046,23 @@ Intel Core i7-8750H CPU 2.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical 
 |      Autofac |    583.26 us | 18.342 us | 17.157 us |   5.84 |    0.21 | 102.5391 | 28.3203 |     - | 472.86 KB |
 | Autofac_MsDI |    561.82 us |  4.129 us |  3.862 us |   5.63 |    0.20 | 101.5625 | 27.3438 |     - | 467.85 KB |
 
-## DryIoc v4.1.5
+## DryIoc v4.2.0
+
+## Before DependencyCount split
 
 |      Method |      Mean |    Error |   StdDev | Ratio |   Gen 0 |  Gen 1 | Gen 2 | Allocated |
 |------------ |----------:|---------:|---------:|------:|--------:|-------:|------:|----------:|
 |        MsDI | 141.78 us | 1.687 us | 1.578 us |  1.00 | 16.8457 | 0.2441 |     - |  73.16 KB |
 |      DryIoc |  98.96 us | 0.203 us | 0.180 us |  0.70 | 14.4043 |      - |     - |  66.87 KB |
 | DryIoc_MsDI | 123.55 us | 1.721 us | 1.526 us |  0.87 | 19.1650 |      - |     - |  88.35 KB |
+
+### Big ExpressionCache
+
+|      Method |     Mean |   Error |  StdDev | Ratio | RatioSD |   Gen 0 |  Gen 1 | Gen 2 | Allocated |
+|------------ |---------:|--------:|--------:|------:|--------:|--------:|-------:|------:|----------:|
+|        MsDI | 124.6 us | 2.26 us | 2.11 us |  1.00 |    0.00 | 16.8457 | 0.4883 |     - |  73.16 KB |
+|      DryIoc | 100.0 us | 0.65 us | 0.60 us |  0.80 |    0.01 | 14.5264 | 0.1221 |     - |  67.12 KB |
+| DryIoc_MsDI | 121.2 us | 0.29 us | 0.27 us |  0.97 |    0.02 | 19.0430 | 0.1221 |     - |  88.21 KB |
 
 ## Branch 258
 
@@ -1062,8 +1072,7 @@ Intel Core i7-8750H CPU 2.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical 
 |      DryIoc | 106.2 us | 1.95 us | 1.83 us |  0.71 |    0.01 | 14.0381 | 0.1221 |     - |  65.19 KB |
 | DryIoc_MsDI | 137.4 us | 3.46 us | 2.89 us |  0.92 |    0.02 | 18.7988 | 0.2441 |     - |  86.92 KB |
 
-             */
-
+*/
             [Benchmark(Baseline = true)]
             public object MsDI() => Measure(PrepareMsDi());
 
@@ -1317,13 +1326,14 @@ Intel Core i7-8750H CPU 2.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical 
 |             Autofac | 50.146 us | 0.5242 us | 0.4377 us | 14.13 |    0.14 | 10.4980 |      - |     - |  48.54 KB |
 | Autofac_MsDIAdapter | 62.118 us | 0.1595 us | 0.1492 us | 17.50 |    0.07 | 12.9395 | 0.8545 |     - |  59.89 KB |
 
-###
 
-|             Method |     Mean |     Error |    StdDev |   Median | Ratio | RatioSD |  Gen 0 | Gen 1 | Gen 2 | Allocated |
-|------------------- |---------:|----------:|----------:|---------:|------:|--------:|-------:|------:|------:|----------:|
-|               MsDI | 4.544 us | 0.1075 us | 0.3137 us | 4.414 us |  1.00 |    0.00 | 0.9460 |     - |     - |   4.37 KB |
-|             DryIoc | 1.973 us | 0.0375 us | 0.0333 us | 1.976 us |  0.40 |    0.03 | 0.6409 |     - |     - |   2.96 KB |
-| DryIoc_MsDIAdapter | 2.939 us | 0.0293 us | 0.0274 us | 2.949 us |  0.60 |    0.04 | 0.6447 |     - |     - |   2.98 KB |
+### DryIoc v4.2
+
+|             Method |     Mean |     Error |    StdDev | Ratio | RatioSD |  Gen 0 | Gen 1 | Gen 2 | Allocated |
+|------------------- |---------:|----------:|----------:|------:|--------:|-------:|------:|------:|----------:|
+|               MsDI | 3.890 us | 0.0158 us | 0.0140 us |  1.00 |    0.00 | 0.9460 |     - |     - |   4.37 KB |
+|             DryIoc | 1.701 us | 0.0014 us | 0.0013 us |  0.44 |    0.00 | 0.6409 |     - |     - |   2.96 KB |
+| DryIoc_MsDIAdapter | 2.629 us | 0.0523 us | 0.0603 us |  0.68 |    0.02 | 0.6447 |     - |     - |   2.98 KB |
 */
 
             private IServiceProvider _msDi;
@@ -1377,10 +1387,10 @@ Intel Core i7-8750H CPU 2.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical 
             //[Benchmark]
             public object DryIoc_InterpretationOnly() => Measure(_dryIocInterpretationOnly);
 
-            [Benchmark]
+            //[Benchmark]
             public object Grace() => Measure(_grace);
 
-            [Benchmark]
+            //[Benchmark]
             public object Grace_MsDIAdapter() => Measure(_graceMsDi);
 
             //[Benchmark]

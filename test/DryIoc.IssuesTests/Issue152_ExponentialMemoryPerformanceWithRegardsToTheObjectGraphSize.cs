@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq.Expressions;
+using System.Linq;
+using FastExpressionCompiler.LightExpression;
 using NUnit.Framework;
 
 namespace DryIoc.IssuesTests
@@ -11,28 +12,24 @@ namespace DryIoc.IssuesTests
         [Test]
         public void Main()
         {
-            var c = new Container(rules => rules.WithDependencyDepthToSplitObjectGraph(1));
+            var c = new Container();
 
-            c.Register<AggQ>();
-            c.Register<AggP>();
-            c.Register<Root>();
-            c.Register<D1>();
-            c.Register<D2>();
-            c.Register<R>();
-
+            c.Register<AggQ>(Reuse.InCurrentScope);
+            c.Register<AggP>(Reuse.InCurrentScope);
+            c.Register<Root>(Reuse.InCurrentScope);
             RegisterIn(c);
 
             var rootExpr = c.Resolve<LambdaExpression>(typeof(R));
 
-            var rootStr = rootExpr.ToString(); 
-            var resolveCallIndex = rootStr.IndexOf("() =>", StringComparison.Ordinal);
-            Assert.AreNotEqual(-1, resolveCallIndex);
-        }
+                var rootCode = rootExpr.CodeString;
+                var nestedLambdas = rootCode.Count(ch => ch == '$');
+                Assert.AreEqual(2603, nestedLambdas);
+            }
 
         [Test]
         public void Main_negative()
         {
-            var c = new Container(rules => rules.WithoutDependencyDepthToSplitObjectGraph());
+            var c = new Container(rules => rules.WithoutDependencyCountInLambdaToSplitBigObjectGraph());
             c.Register<AggQ>();
             c.Register<AggP>();
             c.Register<D1>();
@@ -42,10 +39,10 @@ namespace DryIoc.IssuesTests
             RegisterIn(c);
 
             var rootExpr = c.Resolve<LambdaExpression>(typeof(R));
-            var rootStr = rootExpr.ToString();
-            var resolveCallIndex = rootStr.IndexOf("() =>", StringComparison.Ordinal);
-            Assert.AreEqual(-1, resolveCallIndex);
-        }
+                var rootStr = rootExpr.ToString();
+                var resolveCallIndex = rootStr.IndexOf("\"Resolve\"", StringComparison.InvariantCulture);
+                Assert.AreEqual(-1, resolveCallIndex);
+            }
 
         public interface IP { }
         public interface IQ { }
