@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 
 namespace DryIoc.IssuesTests
@@ -17,6 +18,36 @@ namespace DryIoc.IssuesTests
 
             Assert.IsNotNull(a);
         }
+
+        [Test]
+        public void Should_be_able_to_use_Func_with_argument_and_argument_in_scoped_dependency()
+        {
+            var c = new Container();
+
+            c.Register<T>();
+            c.Register<S>(Reuse.Scoped);
+
+            using (var scope = c.OpenScope())
+            {
+                scope.Resolve<Func<X, T>>();            // interpreting
+                var t = scope.Resolve<Func<X, T>>();    // compiling
+                Assert.IsNotNull(t(new X()));
+            }
+        }
+
+        public class T
+        {
+            public S S;
+            public T(S s) => S = s;
+        }
+
+        public class S
+        {
+            public X X;
+            public S(X x) => X = x;
+        }
+
+        public class X {}
 
         public class A
         {

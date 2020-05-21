@@ -958,7 +958,7 @@ namespace FastExpressionCompiler.LightExpression
                             continue;
                         }
 
-						var methodArgs = callExpr.Arguments;
+                        var methodArgs = callExpr.Arguments;
                         var methodArgCount = methodArgs.Count;
                         if (methodArgCount == 0)
                         {
@@ -1114,9 +1114,6 @@ namespace FastExpressionCompiler.LightExpression
 
                     case ExpressionType.Invoke:
                         var invokeExpr = (InvocationExpression)expr;
-                        if (!TryCollectBoundConstants(ref closure, invokeExpr.Expression, paramExprs, isNestedLambda, ref rootClosure))
-                            return false;
-
                         var invokeArgs = invokeExpr.Arguments;
                         if (invokeArgs.Count == 0)
                         {
@@ -1130,8 +1127,8 @@ namespace FastExpressionCompiler.LightExpression
                         var lastArgIndex = invokeArgs.Count - 1;
                         if (lastArgIndex > 0)
                             for (var i = 0; i < lastArgIndex; i++)
-                            if (!TryCollectBoundConstants(ref closure, invokeArgs[i], paramExprs, isNestedLambda, ref rootClosure))
-                                return false;
+                                if (!TryCollectBoundConstants(ref closure, invokeArgs[i], paramExprs, isNestedLambda, ref rootClosure))
+                                    return false;
                         expr = invokeArgs[lastArgIndex];
                         continue;
 

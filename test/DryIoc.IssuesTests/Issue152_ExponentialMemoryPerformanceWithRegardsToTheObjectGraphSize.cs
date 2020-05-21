@@ -19,12 +19,14 @@ namespace DryIoc.IssuesTests
             c.Register<Root>(Reuse.InCurrentScope);
             RegisterIn(c);
 
-            var rootExpr = c.Resolve<LambdaExpression>(typeof(R));
-
+            using (var scope = c.OpenScope())
+            {
+                var rootExpr = scope.Resolve<LambdaExpression>(typeof(Root));
                 var rootCode = rootExpr.CodeString;
                 var nestedLambdas = rootCode.Count(ch => ch == '$');
-                Assert.AreEqual(2603, nestedLambdas);
+                Assert.AreEqual(1, nestedLambdas);
             }
+        }
 
         [Test]
         public void Main_negative()

@@ -40,7 +40,7 @@ namespace LoadTest
                 var nestedLambdas = code.Count(c => c == '$');
 
                 // the number when split by `dependencyCount >= 256`
-                Assert.AreEqual(67, nestedLambdas);
+                Assert.AreEqual(1, nestedLambdas);
             }
         }
 
@@ -66,9 +66,7 @@ namespace LoadTest
 
                 var code = expr.ToCodeString(new StringBuilder(100000), 2, true, Abbreviate).ToString();
                 var nestedLambdas = code.Count(c => c == '$');
-                Assert.AreEqual(2, nestedLambdas);
-
-                StringAssert.Contains("\"Resolve\"", code);
+                Assert.AreEqual(1, nestedLambdas);
             }
         }
 

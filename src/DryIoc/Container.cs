@@ -3338,6 +3338,7 @@ namespace DryIoc
                 var resolver = r;
                 if (!ReferenceEquals(callExpr.Object, FactoryDelegateCompiler.ResolverContextParamExpr))
                 {
+                    //todo: @perf optimize to `r` or `r.GetRootOrSelf()`
                     if (!TryInterpret(resolver, callExpr.Object, paramExprs, paramValues, parentArgs, useFec, out var resolverObj))
                         return false;
                     resolver = (IResolverContext)resolverObj;
@@ -3346,7 +3347,7 @@ namespace DryIoc
                 var callArgs = callExpr.Arguments.ToListOrSelf();
                 if (method == Resolver.ResolveFastMethod)
                 {
-                    result = resolver.Resolve((Type) ConstValue(callArgs[0]), (IfUnresolved) ConstValue(callArgs[1]));
+                    result = resolver.Resolve((Type)ConstValue(callArgs[0]), (IfUnresolved) ConstValue(callArgs[1]));
                     return true;
                 }
 
@@ -5905,7 +5906,7 @@ namespace DryIoc
             }
 
             if (DependencyCountInLambdaToSplitBigObjectGraph != DefaultDependencyCountInLambdaToSplitBigObjectGraph)
-                s += " with TotalDependencyCountInLambdaToSplitBigObjectGraph=" + DependencyCountInLambdaToSplitBigObjectGraph;
+                s += " with "+ nameof(DependencyCountInLambdaToSplitBigObjectGraph) + "=" + DependencyCountInLambdaToSplitBigObjectGraph;
 
             if (DefaultReuse != null && DefaultReuse != Reuse.Transient)
                 s += (s != "" ? NewLine : "Rules ") + " with DefaultReuse=" + DefaultReuse;
@@ -6194,7 +6195,7 @@ namespace DryIoc
                     if (inputArgs != null)
                     {
                         var inputArgExpr =
-                            ReflectionFactory.TryGetExpressionFromInputArgs(param.ParameterType, inputArgs,
+                            ReflectionFactory.TryGetInputArgNotUsedYet(param.ParameterType, inputArgs,
                                 ref argsUsedMask);
                         if (inputArgExpr != null)
                         {
@@ -8474,7 +8475,7 @@ namespace DryIoc
                 flags |= preResolveParent.Flags & InheritedFlags;
             }
 
-            var inputArgExprs = inputArgs?.Map(a => Constant(a)); // todo: @check what happens if `a == null`, does the `object` type for is fine
+            var inputArgExprs = inputArgs?.Map(a => Constant(a)); // todo: @check what happens if `a == null`, does the `object` type for it is fine
 
             var stack = RequestStack.Get();
             ref var req = ref stack.GetOrPushRef(0);
@@ -9797,7 +9798,7 @@ namespace DryIoc
                                 , typeof(object)
 #endif
                             ), Empty<Expression>()), serviceExpr.Type);
-            }
+                    }
                     else
                     {
                         // cache expression if possible to minimize the double work for the generated Resolve call
@@ -10383,7 +10384,8 @@ namespace DryIoc
                 var param = parameters[i];
                 if (inputArgs != null)
                 {
-                    var inputArgExpr = TryGetExpressionFromInputArgs(param.ParameterType, inputArgs, ref argsUsedMask);
+                    // the ConstantExpression or the ParameterExpression
+                    var inputArgExpr = TryGetInputArgNotUsedYet(param.ParameterType, inputArgs, ref argsUsedMask);
                     if (inputArgExpr != null)
                     {
                         if (paramExprs != null)
@@ -10522,15 +10524,19 @@ namespace DryIoc
                             request);
         }
 
-        // Check not yet used arguments provided via `Func<Arg, TService>` or `Resolve(.., args: new[] { arg })`
-        internal static Expression TryGetExpressionFromInputArgs(Type paramType, Expression[] inputArgs, ref int argsUsedMask)
+        // Check for not yet used arguments provided via `Func<Arg, TService>` or `Resolve(.., args: new[] { arg })`
+        internal static Expression TryGetInputArgNotUsedYet(Type paramType, Expression[] inputArgs, ref int argsUsedMask)
         {
             for (var a = 0; a < inputArgs.Length; ++a)
-                if ((argsUsedMask & 1 << a) == 0 && inputArgs[a].Type.IsAssignableTo(paramType))
+            {
+                if ((argsUsedMask & (1 << a)) == 0 && 
+                    paramType.GetTypeInfo().IsAssignableFrom(inputArgs[a].Type.GetTypeInfo()))
                 {
                     argsUsedMask |= 1 << a; // mark that argument was used
                     return inputArgs[a];
                 }
+            }
+
             return null;
         }
 
@@ -12578,7 +12584,7 @@ namespace DryIoc
         /// <summary>Creates exception with message describing cause and context of error,
         /// and leading/system exception causing it.</summary>
         public ContainerException(int errorCode, string message, Exception innerException)
-            : base($"code: {DryIoc.Error.NameOf(errorCode)}; message: {message}", innerException)
+            : base($"error-code: {DryIoc.Error.NameOf(errorCode)}; message: {message}", innerException)
         {
             Error = errorCode;
         }
