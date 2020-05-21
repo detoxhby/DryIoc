@@ -35,6 +35,23 @@ namespace DryIoc.IssuesTests
             }
         }
 
+        [Test]
+        public void Should_be_able_to_use_Func_with_argument_and_argument_in_scoped_dependency_WithUseInterpretation()
+        {
+            var c = new Container(rules => rules.WithUseInterpretation());
+
+            c.Register<T>();
+            c.Register<S>(Reuse.Scoped);
+
+            using (var scope = c.OpenScope())
+            {
+                scope.Resolve<Func<X, T>>();            // interpreting
+                var t = scope.Resolve<Func<X, T>>();    // interpreting again
+                Assert.IsNotNull(t(new X()));
+            }
+        }
+
+
         public class T
         {
             public S S;

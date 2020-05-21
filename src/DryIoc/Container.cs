@@ -3985,14 +3985,12 @@ namespace DryIoc
             var lambda = Lambda<FactoryDelegate>(expression, FactoryDelegateParamExprs);
 #endif
 
+#if SUPPORTS_EXPRESSION_COMPILE_WITH_PREFER_INTERPRETATION_PARAM
             if (preferInterpretation)
             {
-#if SUPPORTS_EXPRESSION_COMPILE_WITH_PREFER_INTERPRETATION_PARAM
                 return lambda.Compile(preferInterpretation: true);
-#else
-                return lambda.Compile();
-#endif
             }
+#endif
 
             return lambda.Compile();
         }
@@ -11446,17 +11444,12 @@ namespace DryIoc
                     if (factoryRef.Value is Expression expr)
                     {
                         var rules = ((IContainer)r).Rules; // todo: hack for now
-                        if (!rules.UseInterpretation ||
-                            !Interpreter.TryInterpret(r, expr, FactoryDelegateCompiler.ResolverContextParamExpr,
-                                null, null, rules.UseFastExpressionCompiler, out itemRef.Value))
-                        {
-                            if (!factoryRef.TrySwapIfStillCurrent(expr, 
-                                expr.CompileToFactoryDelegate(rules.UseFastExpressionCompiler, rules.UseInterpretation)))
-                                factoryRef.Swap(rules, (x, r) => x is Expression e
-                                    ? e.CompileToFactoryDelegate(r.UseFastExpressionCompiler, r.UseInterpretation)
-                                    : x);
-                            itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
-                        }
+                        if (!factoryRef.TrySwapIfStillCurrent(expr, 
+                            expr.CompileToFactoryDelegate(rules.UseFastExpressionCompiler, rules.UseInterpretation)))
+                            factoryRef.Swap(rules, (x, r) => x is Expression e
+                                ? e.CompileToFactoryDelegate(r.UseFastExpressionCompiler, r.UseInterpretation)
+                                : x);
+                        itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
                     }
                     else
                         itemRef.Value = ((FactoryDelegate)factoryRef.Value)(r);
