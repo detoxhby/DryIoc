@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq.Expressions;
 using DryIoc.UnitTests.CUT;
 using NUnit.Framework;
@@ -125,6 +125,20 @@ namespace DryIoc.UnitTests
             var blah = container.Resolve<Blah>();
 
             Assert.IsNotNull(blah);
+
+            container.Dispose();
+        }
+
+        [Test]
+        public void Resolve_factory_identifier()
+        {
+            var container = new Container();
+
+            container.Register<Blah>();
+
+            var blahFactoryId = container.Resolve<FactoryIdentifier<Blah>>();
+
+            Assert.Greater(blahFactoryId, 0);
 
             container.Dispose();
         }

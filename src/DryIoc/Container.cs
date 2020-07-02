@@ -4731,6 +4731,25 @@ namespace DryIoc
     /// <summary>The stronly typed delegate for service creation registered as a Wrapper.</summary>
     public delegate TService FactoryDelegate<TService>(IResolverContext r);
 
+    /// <summary>
+    /// Wraps a specific <see cref="T" /> type's factory id
+    /// </summary>
+    public struct FactoryIdentifier<T>
+    {
+        public static Type ServiceType = typeof(T);
+
+        internal int Id;
+
+        public FactoryIdentifier(int id)
+        {
+            Id = id;
+        }
+
+        public static implicit operator int(FactoryIdentifier<T> entry) => entry.Id;
+
+        public static implicit operator FactoryIdentifier<T>(int id) => new FactoryIdentifier<T>(id);
+    }
+
     /// <summary>Adds to Container support for:
     /// <list type="bullet">
     /// <item>Open-generic services</item>
@@ -4805,6 +4824,9 @@ namespace DryIoc
 
             wrappers = wrappers.AddOrUpdate(typeof(System.Linq.Expressions.LambdaExpression),
                 new ExpressionFactory(GetLambdaExpressionExpressionOrDefault, setup: Setup.Wrapper));
+
+            wrappers = wrappers.AddOrUpdate(typeof(FactoryIdentifier<>),
+                new ExpressionFactory(GetFactoryIdExpressionOrDefault, setup: Setup.Wrapper));
 
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
             wrappers = wrappers.AddOrUpdate(typeof(FastExpressionCompiler.LightExpression.LambdaExpression),
@@ -5074,6 +5096,14 @@ namespace DryIoc
                 .ToLambdaExpression()
 #endif
                 , typeof(System.Linq.Expressions.LambdaExpression));
+        }
+
+        private static Expression GetFactoryIdExpressionOrDefault(Request request)
+        {
+            request = request.Push(request.ServiceType.GenericTypeArguments?[0]?.ThrowIfNull(Error.ResolutionNeedsRequiredServiceType, request));
+            var factory = request.Container.ResolveFactory(request);
+            
+            return Convert(Constant(factory.FactoryID), typeof(FactoryIdentifier<>).MakeGenericType(request.ServiceType));
         }
 
 #if SUPPORTS_FAST_EXPRESSION_COMPILER
